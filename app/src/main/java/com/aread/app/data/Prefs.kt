@@ -3,7 +3,6 @@ package com.aread.app.data
 import android.content.Context
 import androidx.core.content.edit
 
-/** Small local store for things the blocking services need without a network call. */
 object Prefs {
     private fun sp(c: Context) = c.getSharedPreferences("aread", Context.MODE_PRIVATE)
 
@@ -13,14 +12,12 @@ object Prefs {
     fun lastOpenMs(c: Context) = sp(c).getLong("last_open", System.currentTimeMillis())
     fun touchOpen(c: Context) = sp(c).edit { putLong("last_open", System.currentTimeMillis()) }
 
-    // Focus session
     fun focusUntilMs(c: Context) = sp(c).getLong("focus_until", 0L)
     fun startFocus(c: Context, minutes: Int) =
         sp(c).edit { putLong("focus_until", System.currentTimeMillis() + minutes * 60_000L) }
     fun stopFocus(c: Context) = sp(c).edit { putLong("focus_until", 0L) }
     fun isFocusing(c: Context) = System.currentTimeMillis() < focusUntilMs(c)
 
-    // Forced study lock after 2+ inactive days
     fun forcedLockUntilMs(c: Context) = sp(c).getLong("forced_until", 0L)
     fun setForcedLock(c: Context, minutes: Int) =
         sp(c).edit { putLong("forced_until", System.currentTimeMillis() + minutes * 60_000L) }

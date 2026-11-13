@@ -25,7 +25,6 @@ object Repository {
 
     suspend fun restoreSession() = runCatching { sb.auth.awaitInitialization() }
 
-    // ---- Auth (no guest mode) ----
     suspend fun signUpEmail(email: String, password: String) =
         sb.auth.signUpWith(Email) { this.email = email; this.password = password }
 
@@ -44,7 +43,6 @@ object Repository {
 
     suspend fun signOut() = sb.auth.signOut()
 
-    // ---- Profile ----
     suspend fun myProfile(): Profile? {
         val id = userId ?: return null
         return sb.from("profiles").select { filter { eq("id", id) } }.decodeSingleOrNull<Profile>()
@@ -56,7 +54,6 @@ object Repository {
         )
     }
 
-    // ---- Study sessions, streaks, leaderboard ----
     suspend fun logSession(minutes: Int) {
         sb.postgrest.rpc("log_focus_session", mapOf("minutes" to minutes))
     }
@@ -67,7 +64,6 @@ object Repository {
             limit(50)
         }.decodeList()
 
-    // ---- Textbooks ----
     suspend fun uploadTextbookPage(context: Context, uri: Uri, subject: String): String {
         val uid = userId ?: error("Not signed in")
         val bytes = context.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
@@ -77,13 +73,11 @@ object Repository {
         return path
     }
 
-    // ---- AI tutor (all calls go through our edge function; no AI key in the app) ----
     suspend fun askTutor(req: TutorRequest): TutorReply {
         val res = sb.functions.invoke("tutor", body = req)
         return json.decodeFromString(res.bodyAsText())
     }
 
-    // ---- Admin (server enforces is_admin via RLS and function checks) ----
     suspend fun adminStats(): Map<String, Int> =
         sb.postgrest.rpc("admin_stats").decodeAs<Map<String, Int>>()
 

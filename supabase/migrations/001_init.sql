@@ -1,5 +1,3 @@
--- Aread schema. Run in Supabase SQL editor (or `supabase db push`).
-
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   name text not null default '',
@@ -27,11 +25,9 @@ create policy "own profile update" on public.profiles for update using (auth.uid
 create policy "admin read all" on public.profiles for select
   using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
 
--- Students must never be able to change their own admin flag, streak or minutes directly.
 revoke update on public.profiles from authenticated;
 grant update (name, phone, class_level, roll_no, avg_grade, school_name, school_type, goals) on public.profiles to authenticated;
 
--- Log a finished focus session: updates weekly minutes and streak atomically, server-side.
 create or replace function public.log_focus_session(minutes int)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -63,14 +59,12 @@ begin
   where id = auth.uid();
 end $$;
 
--- Leaderboard exposes only name, school and numbers.
 create or replace view public.leaderboard_weekly with (security_invoker = false) as
   select name, school_name, focus_minutes_week, streak_days
   from public.profiles
   where name <> '' and week_start = date_trunc('week', now() at time zone 'Asia/Kathmandu')::date;
 grant select on public.leaderboard_weekly to authenticated;
 
--- Textbook pages
 create table public.textbook_pages (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -87,7 +81,6 @@ create policy "own textbook files read" on storage.objects for select
 create policy "own textbook files write" on storage.objects for insert
   with check (bucket_id = 'textbooks' and (storage.foldername(name))[1] = auth.uid()::text);
 
--- Tutor rate limiting (used by the edge function)
 create table public.tutor_usage (
   user_id uuid not null references auth.users(id) on delete cascade,
   day date not null default current_date,
@@ -104,7 +97,6 @@ returns int language sql security definer set search_path = public as $$
 $$;
 revoke all on function public.bump_tutor_usage(uuid) from public, anon, authenticated;
 
--- Admin stats (checked server-side)
 create or replace function public.admin_stats()
 returns jsonb language plpgsql security definer set search_path = public as $$
 begin
@@ -118,6 +110,3 @@ begin
     'textbook_pages', (select count(*) from public.textbook_pages)
   );
 end $$;
-
--- Make yourself admin once (replace with your own user id after you sign in):
--- update public.profiles set is_admin = true where id = '<YOUR-USER-UUID>';

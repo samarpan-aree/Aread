@@ -18,8 +18,8 @@ jobs:
       - name: Write app config from repository secrets
         run: |
           {
-            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}"
-            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}"
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL || 'https://nrbzexvvmzyiclprbtce.supabase.co' }}"
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY || 'sb_publishable_p1Qh9Ad8Zbq4c8USyg3iBQ_jR8o1GVC' }}"
             echo "GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}"
           } > secrets.properties
       - run: gradle :app:assembleDebug --no-daemon

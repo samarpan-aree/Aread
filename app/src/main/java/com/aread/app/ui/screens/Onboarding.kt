@@ -25,7 +25,6 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// ---------- 1. Intro ----------
 @Composable
 fun IntroScreen(onDone: () -> Unit) {
     val words = listOf("Read.", "Focus.", "Improve.")
@@ -45,12 +44,11 @@ fun IntroScreen(onDone: () -> Unit) {
     }
 }
 
-// ---------- 2. Login (no guest mode) ----------
 @Composable
 fun LoginScreen(onSignedIn: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var mode by remember { mutableStateOf("choose") } // choose | email | phone
+    var mode by remember { mutableStateOf("choose") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("+977") }
@@ -124,7 +122,6 @@ private suspend fun googleSignIn(context: Context) {
     }
 }
 
-// ---------- 3. Profile details ----------
 @Composable
 fun ProfileSetupScreen(onDone: (Profile) -> Unit) {
     var name by remember { mutableStateOf("") }
@@ -160,7 +157,6 @@ fun ProfileSetupScreen(onDone: (Profile) -> Unit) {
     }
 }
 
-// ---------- 4. Goals ----------
 private val GOAL_OPTIONS = listOf(
     "Prepare for exams", "Board / SEE exam", "Build a daily study habit", "Stop doom scrolling",
     "Cut down on gaming", "Finish my syllabus on time", "Improve weak subjects", "Get better sleep routine",

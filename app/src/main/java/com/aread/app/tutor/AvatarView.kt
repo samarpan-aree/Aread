@@ -15,11 +15,6 @@ import io.github.sceneview.rememberNodes
 import io.github.sceneview.rememberOnGestureListener
 import kotlin.math.sin
 
-/**
- * 3D tutor "Medha". Loads assets/medha.glb (a rigged head/bust with ARKit-style morph targets:
- * jawOpen, mouthFunnel, mouthPucker, mouthSmile*, mouthClose, eyeBlink*).
- * Mouth targets follow [mouth] from LipSyncSpeaker; the head idles with a slow sway and blinks.
- */
 @Composable
 fun AvatarView(mouth: Mouth, speaking: Boolean, modifier: Modifier = Modifier) {
     val engine = rememberEngine()
@@ -29,7 +24,7 @@ fun AvatarView(mouth: Mouth, speaking: Boolean, modifier: Modifier = Modifier) {
 
     var model by remember { mutableStateOf<ModelNode?>(null) }
     LaunchedEffect(Unit) {
-        // If medha.glb isn't in assets yet, the avatar area simply stays empty instead of crashing.
+
         runCatching {
             val instance = modelLoader.createModelInstance("medha.glb")
             val node = ModelNode(modelInstance = instance, scaleToUnits = 0.6f)
@@ -38,7 +33,6 @@ fun AvatarView(mouth: Mouth, speaking: Boolean, modifier: Modifier = Modifier) {
         }
     }
 
-    // Idle motion + blink loop
     LaunchedEffect(model) {
         val node = model ?: return@LaunchedEffect
         var t = 0f
@@ -52,7 +46,6 @@ fun AvatarView(mouth: Mouth, speaking: Boolean, modifier: Modifier = Modifier) {
         }
     }
 
-    // Lipsync
     LaunchedEffect(mouth, model) {
         val node = model ?: return@LaunchedEffect
         node.setMorph("jawOpen", mouth.jawOpen)
@@ -75,11 +68,6 @@ fun AvatarView(mouth: Mouth, speaking: Boolean, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * Sets a morph target by name; ignores names the model lacks.
- * Isolated in one place because SceneView's morph API has changed between versions:
- * if it doesn't compile on your SceneView version, only this function needs adjusting.
- */
 private fun ModelNode.setMorph(name: String, weight: Float) {
     runCatching {
         val index = morphTargetNames.indexOf(name)

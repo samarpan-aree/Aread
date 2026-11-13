@@ -5,11 +5,6 @@ import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import com.aread.app.data.Prefs
 
-/**
- * Watches only which app comes to the foreground (window state changes).
- * It does not read screen content. When a blocked app opens during a focus
- * session or a forced study lock, the block screen is shown on top of it.
- */
 class AppBlockerService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

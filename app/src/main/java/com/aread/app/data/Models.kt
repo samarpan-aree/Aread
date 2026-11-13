@@ -20,7 +20,6 @@ data class Profile(
     @SerialName("focus_minutes_week") val focusMinutesWeek: Int = 0,
 )
 
-/** Only the fields a student may write. Streaks, minutes and admin flag are server-managed. */
 @Serializable
 data class ProfileInput(
     val id: String,
