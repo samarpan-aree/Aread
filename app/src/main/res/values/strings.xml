@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Aread</string>
+    <string name="accessibility_label">Aread focus blocker</string>
+    <string name="accessibility_desc">Aread checks which app is open so it can pause distracting apps during your study sessions. It never reads what you type or what is on your screen.</string>
+</resources>
