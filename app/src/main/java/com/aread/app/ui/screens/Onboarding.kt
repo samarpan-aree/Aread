@@ -1,24 +1,42 @@
 package com.aread.app.ui.screens
 
 import android.content.Context
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
-import androidx.credentials.GetCredentialRequest
 import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
 import com.aread.app.BuildConfig
+import com.aread.app.data.Countries
+import com.aread.app.data.Prefs
 import com.aread.app.data.Profile
 import com.aread.app.data.Repository
+import com.aread.app.tutor.Mouth
 import com.aread.app.ui.theme.AreadColors
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -27,20 +45,209 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun IntroScreen(onDone: () -> Unit) {
-    val words = listOf("Read.", "Focus.", "Improve.")
-    var shown by remember { mutableIntStateOf(0) }
+    var splash by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
-        repeat(words.size) { delay(700); shown = it + 1 }
-        delay(900)
-        onDone()
+        delay(1900)
+        splash = false
     }
-    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center) {
-        Text("Aread", style = MaterialTheme.typography.headlineLarge, color = AreadColors.Accent)
-        Spacer(Modifier.height(24.dp))
-        words.forEachIndexed { i, w ->
-            val a by animateFloatAsState(if (shown > i) 1f else 0f, tween(500), label = "w$i")
-            Text(w, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.alpha(a))
+    Crossfade(splash, animationSpec = tween(700), label = "intro") { showSplash ->
+        if (showSplash) Splash() else IntroPager(onDone)
+    }
+}
+
+@Composable
+private fun Splash() {
+    val scale = remember { Animatable(0.55f) }
+    val fade = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        launch { scale.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 110f)) }
+        launch {
+            delay(550)
+            fade.animateTo(1f, tween(650))
         }
+    }
+    val inf = rememberInfiniteTransition(label = "pulse")
+    val ring by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1700, easing = LinearEasing)), label = "ring")
+    val accent = AreadColors.Accent
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(200.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.fillMaxSize()) {
+                    repeat(2) { i ->
+                        val t = (ring + i * 0.5f) % 1f
+                        drawCircle(
+                            accent.copy(alpha = (1f - t) * 0.4f),
+                            radius = size.minDimension / 2 * (0.5f + t * 0.5f),
+                            style = Stroke(3.dp.toPx()),
+                        )
+                    }
+                }
+                Box(
+                    Modifier.size(108.dp).scale(scale.value).clip(RoundedCornerShape(32.dp)).background(accent),
+                    contentAlignment = Alignment.Center,
+                ) { BookGlyph(MaterialTheme.colorScheme.onPrimary, Modifier.size(68.dp)) }
+            }
+            Spacer(Modifier.height(16.dp))
+            Text("Aread", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.alpha(fade.value))
+            Spacer(Modifier.height(4.dp))
+            Text("Study with focus", color = AreadColors.Muted, modifier = Modifier.alpha(fade.value))
+        }
+    }
+}
+
+@Composable
+private fun IntroPager(onDone: () -> Unit) {
+    val pages = listOf(
+        "Focus on what matters" to "Timers, Pomodoro and strict mode keep you studying until the session is done.",
+        "Block the noise" to "Reels, games and unknown calls pause while you study, so nothing pulls you away.",
+        "Learn with Medha" to "Stuck? Medha gives hints and finds the exact step where you went wrong, without handing you the answer.",
+    )
+    val pager = rememberPagerState(pageCount = { pages.size })
+    val scope = rememberCoroutineScope()
+    val last = pager.currentPage == pages.lastIndex
+    Column(Modifier.fillMaxSize().padding(24.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onDone) { Text("Skip", color = AreadColors.Muted) }
+        }
+        HorizontalPager(pager, Modifier.weight(1f)) { page ->
+            Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Box(Modifier.size(270.dp), contentAlignment = Alignment.Center) {
+                    when (page) {
+                        0 -> FocusArt()
+                        1 -> BlockArt()
+                        else -> TutorArt()
+                    }
+                }
+                Spacer(Modifier.height(32.dp))
+                Text(pages[page].first, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    pages[page].second,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = AreadColors.Muted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalArrangement = Arrangement.Center) {
+            repeat(pages.size) { i ->
+                val selected = pager.currentPage == i
+                val width by animateDpAsState(if (selected) 28.dp else 8.dp, spring(stiffness = 300f), label = "dot")
+                Box(
+                    Modifier.padding(horizontal = 3.dp).height(8.dp).width(width).clip(RoundedCornerShape(50))
+                        .background(if (selected) AreadColors.Accent else AreadColors.Line),
+                )
+            }
+        }
+        PrimaryButton(if (last) "Get started" else "Next") {
+            if (last) onDone() else scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
+        }
+    }
+}
+
+@Composable
+private fun FocusArt() {
+    val inf = rememberInfiniteTransition(label = "focus")
+    val sweep by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(6000, easing = LinearEasing)), label = "sweep")
+    val pulse by inf.animateFloat(0.93f, 1.03f, infiniteRepeatable(tween(1700, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "pulse")
+    val accent = AreadColors.Accent
+    val soft = AreadColors.AccentSoft
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val s = 14.dp.toPx()
+            drawCircle(soft, radius = size.minDimension / 2 * pulse)
+            drawArc(
+                accent.copy(alpha = 0.25f), 0f, 360f, false, Offset(s, s), Size(size.width - s * 2, size.height - s * 2),
+                style = Stroke(s),
+            )
+            drawArc(
+                accent, sweep - 90f, 70f, false, Offset(s, s), Size(size.width - s * 2, size.height - s * 2),
+                style = Stroke(s, cap = StrokeCap.Round),
+            )
+        }
+        BookGlyph(accent, Modifier.size(130.dp).scale(pulse))
+    }
+}
+
+@Composable
+private fun BlockArt() {
+    val inf = rememberInfiniteTransition(label = "block")
+    val t by inf.animateFloat(0f, 11f, infiniteRepeatable(tween(7500, easing = LinearEasing)), label = "t")
+    val paper = AreadColors.Surface
+    val line = AreadColors.Line
+    val muted = AreadColors.Muted
+    val tints = listOf(
+        AreadColors.Accent, AreadColors.Amber, AreadColors.Warn, Color(0xFF3F51B5), Color(0xFF7B3F8C),
+        Color(0xFF1F6F9F), AreadColors.Amber, AreadColors.Accent, AreadColors.Warn,
+    )
+    Canvas(Modifier.fillMaxSize()) {
+        val pw = size.width * 0.6f
+        val ph = size.height * 0.94f
+        val left = (size.width - pw) / 2
+        val top = (size.height - ph) / 2
+        drawRoundRect(line, Offset(left, top), Size(pw, ph), CornerRadius(36.dp.toPx()), style = Stroke(3.dp.toPx()))
+        drawRoundRect(paper, Offset(left, top), Size(pw, ph), CornerRadius(36.dp.toPx()))
+        val pad = 20.dp.toPx()
+        val gap = 12.dp.toPx()
+        val cell = (pw - pad * 2 - gap * 2) / 3
+        for (i in 0 until 9) {
+            val col = i % 3
+            val row = i / 3
+            val x = left + pad + col * (cell + gap)
+            val y = top + 48.dp.toPx() + row * (cell + gap)
+            val blocked = t.toInt() > i && t < 10f
+            val color = if (blocked) line else tints[i]
+            drawRoundRect(color, Offset(x, y), Size(cell, cell), CornerRadius(12.dp.toPx()))
+            if (blocked) {
+                val m = cell * 0.28f
+                val w = 3.dp.toPx()
+                drawLine(muted, Offset(x + m, y + m), Offset(x + cell - m, y + cell - m), w, StrokeCap.Round)
+                drawLine(muted, Offset(x + cell - m, y + m), Offset(x + m, y + cell - m), w, StrokeCap.Round)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TutorArt() {
+    val inf = rememberInfiniteTransition(label = "tutor")
+    val m by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(280), RepeatMode.Reverse), label = "mouth")
+    val speaking by inf.animateFloat(0f, 1f, infiniteRepeatable(keyframes {
+        durationMillis = 3600
+        1f at 0
+        1f at 2200
+        0f at 2300
+        0f at 3600
+    }), label = "speak")
+    val open = if (speaking > 0.5f) m * 0.75f else 0f
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        MedhaFace(Mouth(jawOpen = open, smile = 0.2f, closed = 1f - open), Modifier.size(190.dp))
+        Spacer(Modifier.height(14.dp))
+        Box(
+            Modifier.clip(RoundedCornerShape(18.dp)).background(AreadColors.Surface).padding(horizontal = 16.dp, vertical = 12.dp),
+        ) { Text("Check step 2. What happens to the sign?", style = MaterialTheme.typography.bodyMedium) }
+    }
+}
+
+@Composable
+private fun SocialButton(letter: String, text: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().height(54.dp),
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AreadColors.Line),
+    ) {
+        Box(
+            Modifier.size(26.dp).clip(RoundedCornerShape(50)).background(AreadColors.AccentSoft),
+            contentAlignment = Alignment.Center,
+        ) { Text(letter, color = AreadColors.Accent, style = MaterialTheme.typography.labelLarge) }
+        Spacer(Modifier.width(12.dp))
+        Text(text, color = AreadColors.Ink, style = MaterialTheme.typography.titleMedium)
     }
 }
 
@@ -51,30 +258,40 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     var mode by remember { mutableStateOf("choose") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("+977") }
+    var country by remember { mutableStateOf(Countries.default) }
+    var digits by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var codeSent by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     fun run(block: suspend () -> Unit) = scope.launch {
-        busy = true; error = null
-        runCatching { block() }.onFailure { error = it.message ?: "Something went wrong. Try again." }
+        busy = true
+        error = null
+        runCatching { block() }.onFailure { error = friendly(it) }
         busy = false
         if (Repository.isSignedIn) onSignedIn()
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.Center) {
-        ScreenHeader("Sign in to Aread", "Your streak and progress are saved to your account.")
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            Modifier.size(64.dp).clip(RoundedCornerShape(20.dp)).background(AreadColors.Accent),
+            contentAlignment = Alignment.Center,
+        ) { BookGlyph(MaterialTheme.colorScheme.onPrimary, Modifier.size(40.dp)) }
+        Spacer(Modifier.height(20.dp))
+        ScreenHeader("Welcome to Aread", "Sign in to keep your streak and progress safe.")
         when (mode) {
             "choose" -> {
-                PrimaryButton("Continue with Google", loading = busy) { run { googleSignIn(ctx) } }
+                SocialButton("G", "Continue with Google") { run { googleSignIn(ctx) } }
                 Spacer(Modifier.height(10.dp))
-                SecondaryButton("Continue with Facebook") { run { Repository.signInFacebook() } }
+                SocialButton("f", "Continue with Facebook") { run { Repository.signInFacebook() } }
                 Spacer(Modifier.height(10.dp))
-                SecondaryButton("Use phone number") { mode = "phone" }
+                SocialButton("#", "Use phone number") { mode = "phone" }
                 Spacer(Modifier.height(10.dp))
-                SecondaryButton("Use email") { mode = "email" }
+                SocialButton("@", "Use email") { mode = "email" }
             }
             "email" -> {
                 Field(email, { email = it }, "Email", KeyboardType.Email)
@@ -85,20 +302,29 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                     run { Repository.signInEmail(email.trim(), password) }
                 }
                 Spacer(Modifier.height(8.dp))
-                SecondaryButton("Create account") { run { Repository.signUpEmail(email.trim(), password) } }
+                SecondaryButton("Create account", enabled = email.isNotBlank() && password.length >= 6) {
+                    run { Repository.signUpEmail(email.trim(), password) }
+                }
                 TextButton(onClick = { mode = "choose" }) { Text("Other ways to sign in") }
             }
             "phone" -> {
-                Field(phone, { phone = it }, "Phone number", KeyboardType.Phone)
+                PhoneField(country, { country = it }, digits, { digits = it })
                 if (codeSent) {
                     Spacer(Modifier.height(10.dp))
-                    Field(code, { code = it }, "6-digit code", KeyboardType.Number)
+                    DigitField(code, { code = it }, "6-digit code", 6)
                 }
                 Spacer(Modifier.height(16.dp))
-                if (!codeSent) PrimaryButton("Send code", enabled = phone.length > 8, loading = busy) {
-                    run { Repository.sendPhoneOtp(phone.trim()); codeSent = true }
-                } else PrimaryButton("Verify", enabled = code.length == 6, loading = busy) {
-                    run { Repository.verifyPhoneOtp(phone.trim(), code.trim()) }
+                if (!codeSent) {
+                    PrimaryButton("Send code", enabled = digits.length >= 6, loading = busy) {
+                        run {
+                            Repository.sendPhoneOtp(Countries.e164(country, digits))
+                            codeSent = true
+                        }
+                    }
+                } else {
+                    PrimaryButton("Verify", enabled = code.length == 6, loading = busy) {
+                        run { Repository.verifyPhoneOtp(Countries.e164(country, digits), code) }
+                    }
                 }
                 TextButton(onClick = { mode = "choose"; codeSent = false }) { Text("Other ways to sign in") }
             }
@@ -110,12 +336,27 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     }
 }
 
+private fun friendly(t: Throwable): String {
+    val m = t.message.orEmpty()
+    return when {
+        m.contains("not set up", true) -> m
+        m.contains("Invalid login", true) -> "Wrong email or password."
+        m.contains("already", true) -> "That email is already registered. Try signing in."
+        m.contains("provider", true) && m.contains("enabled", true) -> "That sign-in method isn't turned on yet."
+        m.contains("unable to resolve", true) || m.contains("timeout", true) -> "No internet connection."
+        m.isBlank() -> "Something went wrong. Try again."
+        else -> m.take(140)
+    }
+}
+
 private suspend fun googleSignIn(context: Context) {
+    if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) error("Google sign-in is not set up yet.")
     val option = GetGoogleIdOption.Builder()
         .setFilterByAuthorizedAccounts(false)
         .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
         .build()
-    val result = CredentialManager.create(context).getCredential(context, GetCredentialRequest.Builder().addCredentialOption(option).build())
+    val result = CredentialManager.create(context)
+        .getCredential(context, GetCredentialRequest.Builder().addCredentialOption(option).build())
     val cred = result.credential
     if (cred is CustomCredential && cred.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
         Repository.signInGoogle(GoogleIdTokenCredential.createFrom(cred.data).idToken)
@@ -123,50 +364,71 @@ private suspend fun googleSignIn(context: Context) {
 }
 
 @Composable
-fun ProfileSetupScreen(onDone: (Profile) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var cls by remember { mutableStateOf("") }
-    var roll by remember { mutableStateOf("") }
-    var grade by remember { mutableStateOf("") }
-    var school by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("government") }
+fun ProfileSetupScreen(initial: Profile?, onDone: (Profile) -> Unit) {
+    val parsed = remember(initial) { Countries.parse(initial?.phone.orEmpty()) }
+    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
+    var country by remember(initial) { mutableStateOf(parsed.first) }
+    var digits by remember(initial) { mutableStateOf(parsed.second) }
+    var cls by remember(initial) { mutableStateOf(initial?.classLevel.orEmpty()) }
+    var roll by remember(initial) { mutableStateOf(initial?.rollNo.orEmpty()) }
+    var grade by remember(initial) { mutableStateOf(initial?.avgGrade.orEmpty()) }
+    var school by remember(initial) { mutableStateOf(initial?.schoolName.orEmpty()) }
+    var type by remember(initial) { mutableStateOf(initial?.schoolType ?: "government") }
     val ok = name.isNotBlank() && cls.isNotBlank() && school.isNotBlank()
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
-        Spacer(Modifier.height(24.dp))
-        ScreenHeader("About you", "This helps Aread match your syllabus and your school's leaderboard.")
-        Field(name, { name = it }, "Full name"); Spacer(Modifier.height(10.dp))
-        Field(phone, { phone = it }, "Phone number", KeyboardType.Phone); Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
+        ScreenHeader("About you", "This matches your syllabus and your school's leaderboard.")
+        Field(name, { name = it }, "Full name", keep = { it.isLetter() || it in " .'-" }, maxLen = 60)
+        Spacer(Modifier.height(10.dp))
+        PhoneField(country, { country = it }, digits, { digits = it })
+        Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Field(cls, { cls = it }, "Class", modifier = Modifier.weight(1f))
-            Field(roll, { roll = it }, "Roll no.", KeyboardType.Number, modifier = Modifier.weight(1f))
+            DigitField(cls, { cls = it }, "Class", 2, Modifier.weight(1f))
+            DigitField(roll, { roll = it }, "Roll no.", 5, Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
-        Field(grade, { grade = it }, "Average grade (e.g. 3.4 GPA or 72%)"); Spacer(Modifier.height(10.dp))
-        Field(school, { school = it }, "School name"); Spacer(Modifier.height(14.dp))
+        Field(
+            grade, { grade = it }, "Average grade (e.g. 3.4 or 72%)", KeyboardType.Decimal,
+            keep = { it.isDigit() || it == '.' || it == '%' }, maxLen = 6,
+        )
+        Spacer(Modifier.height(10.dp))
+        Field(school, { school = it }, "School name", maxLen = 80)
+        Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ChoiceChip("Government", type == "government", { type = "government" }, Modifier.weight(1f))
             ChoiceChip("Private", type == "private", { type = "private" }, Modifier.weight(1f))
         }
         Spacer(Modifier.height(24.dp))
         PrimaryButton("Continue", enabled = ok) {
-            onDone(Profile(id = Repository.userId.orEmpty(), name = name.trim(), phone = phone.trim(), classLevel = cls.trim(),
-                rollNo = roll.trim(), avgGrade = grade.trim(), schoolName = school.trim(), schoolType = type))
+            onDone(
+                Profile(
+                    id = Repository.userId.orEmpty(),
+                    name = name.trim(),
+                    phone = if (digits.isBlank()) "" else Countries.format(country, digits),
+                    classLevel = cls,
+                    rollNo = roll,
+                    avgGrade = grade,
+                    schoolName = school.trim(),
+                    schoolType = type,
+                    goals = initial?.goals.orEmpty(),
+                ),
+            )
         }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
 private val GOAL_OPTIONS = listOf(
     "Prepare for exams", "Board / SEE exam", "Build a daily study habit", "Stop doom scrolling",
-    "Cut down on gaming", "Finish my syllabus on time", "Improve weak subjects", "Get better sleep routine",
+    "Cut down on gaming", "Finish my syllabus on time", "Improve weak subjects", "Sleep on time",
 )
 
 @Composable
-fun GoalsScreen(onDone: (List<String>) -> Unit) {
-    val picked = remember { mutableStateListOf<String>() }
+fun GoalsScreen(initial: List<String>, onDone: (List<String>) -> Unit) {
+    val picked = remember(initial) { mutableStateListOf<String>().apply { addAll(initial) } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
         ScreenHeader("What do you want from Aread?", "Pick everything that applies. You can change this later.")
         GOAL_OPTIONS.forEach { g ->
             ChoiceChip(g, g in picked, { if (g in picked) picked.remove(g) else picked.add(g) })
@@ -174,5 +436,39 @@ fun GoalsScreen(onDone: (List<String>) -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
         PrimaryButton("Continue", enabled = picked.isNotEmpty()) { onDone(picked.toList()) }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun StyleScreen(onDone: () -> Unit) {
+    val ctx = LocalContext.current
+    var best by remember { mutableStateOf(Prefs.bestTime(ctx)) }
+    var goal by remember { mutableStateOf(Prefs.dailyGoal(ctx).toString()) }
+    val times = listOf("Morning" to "Early, before school", "Afternoon" to "After school", "Evening" to "After dinner", "Night" to "Late, when it is quiet")
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
+        Spacer(Modifier.height(12.dp))
+        ScreenHeader("Your study style", "Aread plans your sessions around this.")
+        Text("When do you focus best?", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(10.dp))
+        times.forEach { (key, hint) ->
+            ChoiceChip("$key · $hint", best == key, { best = key })
+            Spacer(Modifier.height(8.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("Daily focus goal", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(30, 60, 90, 120).forEach { m -> Pill("${m}m", goal == m.toString(), { goal = m.toString() }) }
+        }
+        Spacer(Modifier.height(10.dp))
+        DigitField(goal, { goal = it }, "Custom minutes per day", 3, suffix = "min")
+        Spacer(Modifier.height(24.dp))
+        PrimaryButton("Continue", enabled = (goal.toIntOrNull() ?: 0) in 5..600) {
+            Prefs.setBestTime(ctx, best)
+            Prefs.setDailyGoal(ctx, goal.toInt())
+            onDone()
+        }
+        Spacer(Modifier.height(24.dp))
     }
 }
