@@ -34,6 +34,25 @@ data class ProfileInput(
 )
 
 @Serializable
+data class SaveProfileParams(
+    @SerialName("p_name") val name: String,
+    @SerialName("p_phone") val phone: String,
+    @SerialName("p_class") val classLevel: String,
+    @SerialName("p_roll") val rollNo: String,
+    @SerialName("p_grade") val avgGrade: String,
+    @SerialName("p_school") val schoolName: String,
+    @SerialName("p_type") val schoolType: String,
+    @SerialName("p_goals") val goals: List<String>,
+)
+
+@Serializable
+data class TextbookPage(
+    val subject: String = "General",
+    val path: String = "",
+    @SerialName("created_at") val createdAt: String = "",
+)
+
+@Serializable
 data class LeaderRow(
     val name: String,
     @SerialName("school_name") val schoolName: String = "",

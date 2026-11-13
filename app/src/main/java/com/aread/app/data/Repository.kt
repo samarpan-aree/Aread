@@ -50,10 +50,14 @@ object Repository {
     }
 
     suspend fun saveProfile(p: Profile) {
-        sb.from("profiles").upsert(
-            ProfileInput(p.id, p.name, p.phone, p.classLevel, p.rollNo, p.avgGrade, p.schoolName, p.schoolType, p.goals)
+        sb.postgrest.rpc(
+            "save_profile",
+            SaveProfileParams(p.name, p.phone, p.classLevel, p.rollNo, p.avgGrade, p.schoolName, p.schoolType, p.goals),
         )
     }
+
+    suspend fun myPages(): List<TextbookPage> =
+        sb.from("textbook_pages").select { order("created_at", Order.DESCENDING) }.decodeList()
 
     suspend fun logSession(minutes: Int) {
         sb.postgrest.rpc("log_focus_session", mapOf("minutes" to minutes))
