@@ -1,5 +1,3 @@
-// Aread AI tutor proxy. API keys live only in Supabase secrets; the app never sees them.
-// Deploy: supabase functions deploy tutor
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY");

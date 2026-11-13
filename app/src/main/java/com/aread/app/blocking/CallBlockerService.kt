@@ -6,11 +6,6 @@ import android.telecom.Call
 import android.telecom.CallScreeningService
 import com.aread.app.data.Prefs
 
-/**
- * During a focus session, incoming calls are silenced and sent to the missed-call log,
- * except from numbers the student marked as allowed (e.g. parents).
- * Requires the user to set Aread as the call screening app (ROLE_CALL_SCREENING).
- */
 class CallBlockerService : CallScreeningService() {
     override fun onScreenCall(details: Call.Details) {
         val focusing = Prefs.isFocusing(this) || System.currentTimeMillis() < Prefs.forcedLockUntilMs(this)

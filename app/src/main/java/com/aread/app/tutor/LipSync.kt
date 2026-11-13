@@ -9,14 +9,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.util.Locale
 
-/** Mouth shape weights (0..1) that map to ARKit-style blendshapes on the avatar model. */
 data class Mouth(val jawOpen: Float = 0f, val funnel: Float = 0f, val pucker: Float = 0f, val smile: Float = 0f, val closed: Float = 1f)
 
-/**
- * Speaks text with the device's TTS and drives the mouth in time with the spoken characters.
- * TextToSpeech reports which character range is being spoken (onRangeStart), and each
- * letter is mapped to a viseme group. A short decay smooths the movement between letters.
- */
 class LipSyncSpeaker(context: Context) {
     var mouth by mutableStateOf(Mouth())
         private set

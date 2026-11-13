@@ -29,7 +29,6 @@ import java.time.LocalDateTime
 
 const val TUTOR_NAME = "Medha"
 
-// ---------- Home ----------
 @Composable
 fun HomeScreen(profile: Profile?, onOpenTutor: () -> Unit, onSessionDone: (Int) -> Unit) {
     val ctx = LocalContext.current
@@ -108,7 +107,6 @@ private fun Card(onClick: (() -> Unit)? = null, content: @Composable ColumnScope
     }
 }
 
-// ---------- Tutor ----------
 private data class Msg(val fromStudent: Boolean, val text: String)
 
 @Composable
@@ -187,7 +185,6 @@ fun TutorScreen() {
     }
 }
 
-// ---------- Library (textbook upload) ----------
 @Composable
 fun LibraryScreen() {
     val ctx = LocalContext.current
@@ -213,7 +210,6 @@ fun LibraryScreen() {
     }
 }
 
-// ---------- Leaderboard ----------
 @Composable
 fun LeaderboardScreen() {
     var rows by remember { mutableStateOf<List<LeaderRow>?>(null) }
@@ -239,7 +235,6 @@ fun LeaderboardScreen() {
     }
 }
 
-// ---------- Blocklist + settings ----------
 @Composable
 fun SettingsScreen(profile: Profile?, onSignOut: () -> Unit, onAdminUnlocked: () -> Unit) {
     val ctx = LocalContext.current
@@ -260,13 +255,12 @@ fun SettingsScreen(profile: Profile?, onSignOut: () -> Unit, onAdminUnlocked: ()
         Spacer(Modifier.height(32.dp))
         SecondaryButton("Sign out") { onSignOut() }
         Spacer(Modifier.height(24.dp))
-        // Hidden admin entry: tap the version line 7 times. The server still checks is_admin.
+
         Text("Aread 1.0.0", color = AreadColors.Muted, style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.clickable { taps++; if (taps >= 7 && profile?.isAdmin == true) onAdminUnlocked() })
     }
 }
 
-// ---------- Hidden admin panel ----------
 @Composable
 fun AdminScreen() {
     var stats by remember { mutableStateOf<Map<String, Int>?>(null) }

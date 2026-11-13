@@ -10,7 +10,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Flat palette: warm paper, ink, one green accent. No gradients anywhere.
 object AreadColors {
     val Paper = Color(0xFFFAF8F4)
     val Surface = Color(0xFFFFFFFF)

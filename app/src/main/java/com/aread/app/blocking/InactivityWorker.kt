@@ -11,11 +11,6 @@ import com.aread.app.MainActivity
 import com.aread.app.data.Prefs
 import java.util.concurrent.TimeUnit
 
-/**
- * Runs every few hours. If the student hasn't opened Aread for 2+ days:
- *  1. sends a notification, and
- *  2. turns on a study lock that pauses distracting apps for 60 minutes.
- */
 class InactivityWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
 
     override suspend fun doWork(): Result {
