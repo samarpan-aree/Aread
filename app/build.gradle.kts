@@ -68,6 +68,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     implementation(platform("io.github.jan-tennert.supabase:bom:3.0.3"))

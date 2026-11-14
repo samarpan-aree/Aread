@@ -1,7 +1,6 @@
 package com.aread.app.ui.screens
 
 import android.net.Uri
-import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,16 +28,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
-import com.aread.app.data.Repository
-import com.aread.app.data.TutorReply
-import com.aread.app.data.TutorRequest
-import com.aread.app.data.TutorTurn
+import com.aread.app.data.ImageUtil
+import com.aread.app.data.PreparedImage
+import com.aread.app.data.TutorStore
 import com.aread.app.tutor.AvatarView
 import com.aread.app.tutor.LipSyncSpeaker
 import com.aread.app.ui.theme.AreadColors
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-
-private data class Msg(val fromStudent: Boolean, val text: String)
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable
 fun TutorScreen() {
@@ -48,16 +49,14 @@ fun TutorScreen() {
     DisposableEffect(Unit) { onDispose { speaker.release() } }
     val has3d = remember { runCatching { ctx.assets.list("")?.contains("medha.glb") == true }.getOrDefault(false) }
 
-    val msgs = remember {
-        mutableStateListOf(
-            Msg(false, "Hi, I'm $TUTOR_NAME. Send me a question and try it first. I'll guide you, and if you get stuck I'll check your working."),
-        )
-    }
+    LaunchedEffect(Unit) { TutorStore.load(ctx, TUTOR_NAME) }
+    val msgs = TutorStore.msgs
+    val busy = TutorStore.busy
+    val needPhoto = TutorStore.needPhoto
     var input by remember { mutableStateOf("") }
-    var attempts by remember { mutableIntStateOf(0) }
-    var needPhoto by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
     var voice by remember { mutableStateOf(true) }
+    var photoError by remember { mutableStateOf<String?>(null) }
+    var confirmReset by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val keyboard = imeVisible()
 
@@ -66,30 +65,28 @@ fun TutorScreen() {
         if (last >= 0) listState.animateScrollToItem(last)
     }
 
-    fun send(text: String, imageB64: String? = null) {
-        msgs.add(Msg(true, if (imageB64 != null) "$text\n[photo of my attempt]" else text))
-        attempts++
-        scope.launch {
-            busy = true
-            val history = msgs.takeLast(8).map { TutorTurn(if (it.fromStudent) "student" else "tutor", it.text) }
-            val reply = runCatching {
-                Repository.askTutor(TutorRequest(message = text, attempts = attempts, imageBase64 = imageB64, history = history))
-            }.getOrElse {
-                TutorReply("I can't reach my brain right now. Check your internet, or ask your teacher to finish the tutor setup.", "error")
-            }
-            msgs.add(Msg(false, reply.reply))
-            needPhoto = reply.mode == "ask_photo"
-            if (voice) speaker.speak(reply.reply)
-            busy = false
+    LaunchedEffect(TutorStore.toSpeak) {
+        val t = TutorStore.toSpeak
+        if (t != null) {
+            TutorStore.toSpeak = null
+            if (voice) speaker.speak(t)
         }
     }
 
+    fun send(text: String, image: PreparedImage? = null) = TutorStore.send(ctx, TUTOR_NAME, text, image)
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) {
-            val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            if (bytes != null) {
-                needPhoto = false
-                send("Here is my attempt.", Base64.encodeToString(bytes, Base64.NO_WRAP))
+            scope.launch {
+                photoError = null
+                val img = withContext(Dispatchers.IO) { ImageUtil.prepare(ctx, uri) }
+                if (img == null) {
+                    photoError = "I couldn't open that photo. Try another one."
+                } else {
+                    val t = input.trim()
+                    input = ""
+                    send(if (t.isEmpty()) "Here is my attempt." else t, img)
+                }
             }
         }
     }
@@ -108,6 +105,7 @@ fun TutorScreen() {
                     color = AreadColors.Muted,
                 )
             }
+            TextButton(onClick = { confirmReset = true }) { Text("New chat") }
             Text("Voice", style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted)
             Spacer(Modifier.width(8.dp))
             Switch(voice, { voice = it; if (!it) speaker.stop() })
@@ -123,7 +121,7 @@ fun TutorScreen() {
             state = listState,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(msgs) { m ->
+            items(msgs.toList()) { m ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (m.fromStudent) Arrangement.End else Arrangement.Start) {
                     Box(
                         Modifier
@@ -133,17 +131,30 @@ fun TutorScreen() {
                             .background(if (m.fromStudent) AreadColors.Accent else AreadColors.Surface)
                             .padding(14.dp),
                     ) {
-                        Text(
-                            m.text,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (m.fromStudent) MaterialTheme.colorScheme.onPrimary else AreadColors.Ink,
-                        )
+                        Column {
+                            m.photo?.let { path ->
+                                AsyncImage(
+                                    File(path), "Your photo",
+                                    Modifier.fillMaxWidth().heightIn(max = 220.dp).clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                            }
+                            Text(
+                                m.text,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (m.fromStudent) MaterialTheme.colorScheme.onPrimary else AreadColors.Ink,
+                            )
+                        }
                     }
                 }
             }
             if (busy) {
                 item { Text("$TUTOR_NAME is thinking…", color = AreadColors.Muted, modifier = Modifier.padding(8.dp)) }
             }
+        }
+        photoError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
         }
         if (needPhoto) {
             Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -202,5 +213,20 @@ fun TutorScreen() {
                 colors = ButtonDefaults.buttonColors(containerColor = AreadColors.Accent, contentColor = MaterialTheme.colorScheme.onPrimary),
             ) { Text("Send") }
         }
+    }
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            title = { Text("Start a new chat?") },
+            text = { Text("This clears your conversation with $TUTOR_NAME.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    speaker.stop()
+                    TutorStore.reset(ctx, TUTOR_NAME)
+                    confirmReset = false
+                }) { Text("Clear") }
+            },
+            dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Keep") } },
+        )
     }
 }

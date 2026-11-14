@@ -13,6 +13,9 @@ object Supabase {
             install(Auth) {
                 scheme = "aread"
                 host = "auth"
+                alwaysAutoRefresh = true
+                autoLoadFromStorage = true
+                autoSaveToStorage = true
             }
             install(Postgrest)
             install(Storage)

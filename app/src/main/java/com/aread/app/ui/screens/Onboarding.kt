@@ -1,10 +1,12 @@
 package com.aread.app.ui.screens
 
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -33,6 +35,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import com.aread.app.BuildConfig
 import com.aread.app.data.Countries
+import com.aread.app.data.Errors
 import com.aread.app.data.Prefs
 import com.aread.app.data.Profile
 import com.aread.app.data.Repository
@@ -264,13 +267,21 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     var codeSent by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    var finished by remember { mutableStateOf(false) }
+    val emailOk = remember(email) { android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches() }
 
     fun run(block: suspend () -> Unit) = scope.launch {
+        if (busy) return@launch
         busy = true
         error = null
-        runCatching { block() }.onFailure { error = friendly(it) }
+        notice = null
+        runCatching { block() }.onFailure { error = Errors.friendly(it) }
         busy = false
-        if (Repository.isSignedIn) onSignedIn()
+        if (Repository.isSignedIn && !finished) {
+            finished = true
+            onSignedIn()
+        }
     }
 
     Column(
@@ -294,18 +305,26 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                 SocialButton("@", "Use email") { mode = "email" }
             }
             "email" -> {
-                Field(email, { email = it }, "Email", KeyboardType.Email)
+                Field(email, { email = it; error = null }, "Email", KeyboardType.Email)
+                if (email.isNotBlank() && !emailOk) {
+                    Text("Enter a valid email like name@example.com", style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted, modifier = Modifier.padding(top = 4.dp))
+                }
                 Spacer(Modifier.height(10.dp))
-                Field(password, { password = it }, "Password", KeyboardType.Password, secret = true)
+                Field(password, { password = it; error = null }, "Password (at least 6 characters)", KeyboardType.Password, secret = true)
                 Spacer(Modifier.height(16.dp))
-                PrimaryButton("Sign in", enabled = email.isNotBlank() && password.length >= 6, loading = busy) {
+                PrimaryButton("Sign in", enabled = emailOk && password.length >= 6 && !busy, loading = busy) {
                     run { Repository.signInEmail(email.trim(), password) }
                 }
                 Spacer(Modifier.height(8.dp))
-                SecondaryButton("Create account", enabled = email.isNotBlank() && password.length >= 6) {
-                    run { Repository.signUpEmail(email.trim(), password) }
+                SecondaryButton("Create account", enabled = emailOk && password.length >= 6 && !busy) {
+                    run {
+                        Repository.signUpEmail(email.trim(), password)
+                        if (!Repository.isSignedIn) {
+                            notice = "Almost done. We sent a link to ${email.trim()}. Open it, then come back and tap Sign in."
+                        }
+                    }
                 }
-                TextButton(onClick = { mode = "choose" }) { Text("Other ways to sign in") }
+                TextButton(onClick = { mode = "choose"; error = null; notice = null }) { Text("Other ways to sign in") }
             }
             "phone" -> {
                 PhoneField(country, { country = it }, digits, { digits = it })
@@ -329,23 +348,70 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                 TextButton(onClick = { mode = "choose"; codeSent = false }) { Text("Other ways to sign in") }
             }
         }
-        error?.let {
-            Spacer(Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        AnimatedVisibility(error != null || notice != null) {
+            val isError = error != null
+            Row(
+                Modifier
+                    .padding(top = 14.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (isError) MaterialTheme.colorScheme.error.copy(alpha = 0.1f) else AreadColors.AccentSoft)
+                    .padding(14.dp),
+            ) {
+                Text(
+                    error ?: notice.orEmpty(),
+                    color = if (isError) MaterialTheme.colorScheme.error else AreadColors.Ink,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
 
-private fun friendly(t: Throwable): String {
-    val m = t.message.orEmpty()
-    return when {
-        m.contains("not set up", true) -> m
-        m.contains("Invalid login", true) -> "Wrong email or password."
-        m.contains("already", true) -> "That email is already registered. Try signing in."
-        m.contains("provider", true) && m.contains("enabled", true) -> "That sign-in method isn't turned on yet."
-        m.contains("unable to resolve", true) || m.contains("timeout", true) -> "No internet connection."
-        m.isBlank() -> "Something went wrong. Try again."
-        else -> m.take(140)
+@Composable
+fun WelcomeScreen(name: String, streak: Int, todayMinutes: Int, onDone: () -> Unit) {
+    val scale = remember { Animatable(0.7f) }
+    val fade = remember { Animatable(0f) }
+    var skip by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        launch { scale.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 120f)) }
+        launch { fade.animateTo(1f, tween(700)) }
+        delay(2300)
+        if (!skip) onDone()
+    }
+    val first = name.substringBefore(' ').ifBlank { "there" }
+    Box(
+        Modifier.fillMaxSize().clickable(
+            indication = null,
+            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+        ) {
+            if (!skip) {
+                skip = true
+                onDone()
+            }
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+            Box(
+                Modifier.size(96.dp).scale(scale.value).clip(RoundedCornerShape(28.dp)).background(AreadColors.Accent),
+                contentAlignment = Alignment.Center,
+            ) { BookGlyph(MaterialTheme.colorScheme.onPrimary, Modifier.size(60.dp)) }
+            Spacer(Modifier.height(24.dp))
+            Text("Welcome back,", color = AreadColors.Muted, style = MaterialTheme.typography.titleMedium, modifier = Modifier.alpha(fade.value))
+            Text(first, style = MaterialTheme.typography.headlineLarge, modifier = Modifier.alpha(fade.value))
+            Spacer(Modifier.height(14.dp))
+            Text(
+                when {
+                    streak > 1 -> "$streak day streak. Keep it going."
+                    todayMinutes > 0 -> "$todayMinutes minutes focused today."
+                    else -> "Ready for a focused session?"
+                },
+                color = AreadColors.Muted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.alpha(fade.value),
+            )
+        }
     }
 }
 

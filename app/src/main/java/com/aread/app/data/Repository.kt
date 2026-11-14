@@ -1,7 +1,6 @@
 package com.aread.app.data
 
-import android.content.Context
-import android.net.Uri
+import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Facebook
 import io.github.jan.supabase.auth.providers.Google
@@ -23,24 +22,34 @@ object Repository {
 
     val userId: String? get() = sb.auth.currentUserOrNull()?.id
     val isSignedIn: Boolean get() = sb.auth.currentSessionOrNull() != null
+    val sessionStatus get() = sb.auth.sessionStatus
 
     suspend fun restoreSession() = runCatching { sb.auth.awaitInitialization() }
 
-    suspend fun signUpEmail(email: String, password: String) =
-        sb.auth.signUpWith(Email) { this.email = email; this.password = password }
+    suspend fun signUpEmail(address: String, secret: String) =
+        sb.auth.signUpWith(Email) {
+            email = address
+            password = secret
+        }
 
-    suspend fun signInEmail(email: String, password: String) =
-        sb.auth.signInWith(Email) { this.email = email; this.password = password }
+    suspend fun signInEmail(address: String, secret: String) =
+        sb.auth.signInWith(Email) {
+            email = address
+            password = secret
+        }
 
-    suspend fun signInGoogle(idToken: String) =
-        sb.auth.signInWith(IDToken) { this.idToken = idToken; provider = Google }
+    suspend fun signInGoogle(token: String) =
+        sb.auth.signInWith(IDToken) {
+            idToken = token
+            provider = Google
+        }
 
     suspend fun signInFacebook() = sb.auth.signInWith(Facebook)
 
-    suspend fun sendPhoneOtp(phone: String) = sb.auth.signInWith(OTP) { this.phone = phone }
+    suspend fun sendPhoneOtp(number: String) = sb.auth.signInWith(OTP) { phone = number }
 
-    suspend fun verifyPhoneOtp(phone: String, code: String) =
-        sb.auth.verifyPhoneOtp(type = io.github.jan.supabase.auth.OtpType.Phone.SMS, phone = phone, token = code)
+    suspend fun verifyPhoneOtp(number: String, code: String) =
+        sb.auth.verifyPhoneOtp(type = OtpType.Phone.SMS, phone = number, token = code)
 
     suspend fun signOut() = sb.auth.signOut()
 
@@ -56,36 +65,48 @@ object Repository {
         )
     }
 
-    suspend fun myPages(): List<TextbookPage> =
-        sb.from("textbook_pages").select { order("created_at", Order.DESCENDING) }.decodeList()
-
     suspend fun logSession(minutes: Int) {
         sb.postgrest.rpc("log_focus_session", mapOf("minutes" to minutes))
     }
 
-    suspend fun leaderboard(): List<LeaderRow> =
-        sb.from("leaderboard_weekly").select {
-            order("focus_minutes_week", Order.DESCENDING)
-            limit(50)
-        }.decodeList()
+    suspend fun leaderboard(): List<LeaderRow> = sb.postgrest.rpc("leaderboard_weekly").decodeList()
 
-    suspend fun uploadTextbookPage(context: Context, uri: Uri, subject: String): String {
+    suspend fun analyzePage(imageBase64: String, hint: String): PageAnalysis {
+        val res = sb.functions.invoke("analyze-page", body = AnalyzeRequest(imageBase64, hint))
+        return json.decodeFromString(res.bodyAsText())
+    }
+
+    suspend fun saveTextbookPage(bytes: ByteArray, a: PageAnalysis, subject: String) {
         val uid = userId ?: error("Not signed in")
-        val bytes = context.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
         val path = "$uid/${System.currentTimeMillis()}.jpg"
         sb.storage.from("textbooks").upload(path, bytes)
-        sb.from("textbook_pages").insert(mapOf("user_id" to uid, "subject" to subject, "path" to path))
-        return path
+        sb.from("textbook_pages").insert(
+            TextbookInsert(
+                userId = uid,
+                subject = subject.ifBlank { a.subject }.take(40),
+                path = path,
+                chapter = a.chapter.take(120),
+                topics = a.topics,
+                summary = a.summary.take(300),
+                difficulty = a.difficulty,
+                estMinutes = a.estMinutes,
+            ),
+        )
     }
+
+    suspend fun myPages(): List<TextbookPage> =
+        sb.from("textbook_pages").select { order("created_at", Order.DESCENDING) }.decodeList()
 
     suspend fun askTutor(req: TutorRequest): TutorReply {
         val res = sb.functions.invoke("tutor", body = req)
         return json.decodeFromString(res.bodyAsText())
     }
 
-    suspend fun adminStats(): Map<String, Int> =
-        sb.postgrest.rpc("admin_stats").decodeAs<Map<String, Int>>()
+    suspend fun adminStats(): Map<String, Int> = sb.postgrest.rpc("admin_stats").decodeAs()
 
     suspend fun adminAllProfiles(): List<Profile> =
-        sb.from("profiles").select { order("created_at", Order.DESCENDING); limit(200) }.decodeList()
+        sb.from("profiles").select {
+            order("created_at", Order.DESCENDING)
+            limit(200)
+        }.decodeList()
 }
