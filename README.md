@@ -21,7 +21,7 @@ It was made by Ar Studio for students in Nepal, but nothing in it is specific to
 
 - Android app in Kotlin with Jetpack Compose, in `app/`.
 - Backend on Supabase in `supabase/`: Postgres with row level security, email, Google and phone sign-in, file storage for textbook pages, and edge functions for the tutor and page reading.
-- Secrets such as the tutor service key live only in the Supabase project. The app never holds them.
+- Secrets such as the tutor and page-reading keys (`GEMINI_API_KEY`, and optionally `GROQ_API_KEY` for faster page reading) live only in the Supabase project. The app never holds them.
 
 ## Building
 

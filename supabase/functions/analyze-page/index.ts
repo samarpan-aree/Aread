@@ -2,6 +2,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const MODELS = [Deno.env.get("GEMINI_MODEL") ?? "gemini-3.8-flash", "gemini-flash-latest"];
+const GROQ_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
+const GROQ_MODELS = [Deno.env.get("GROQ_VISION_MODEL") ?? "meta-llama/llama-4-scout-17b-16e-instruct"];
 const DAILY_LIMIT = Number(Deno.env.get("ANALYZE_DAILY_LIMIT") ?? "60");
 
 const CORS = {
@@ -32,11 +34,54 @@ const SCHEMA = {
   required: ["is_study_material", "reason"],
 };
 
+const JSON_SHAPE = `Reply with only a JSON object with these keys: is_study_material (boolean), reason (string), readable (boolean), subject (string), chapter_or_topic (string), topics (array of up to 6 short strings), summary (one or two sentences), difficulty ("easy", "medium" or "hard"), estimated_study_minutes (integer from 10 to 90), has_questions (boolean).`;
+
 function reply(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+async function groqAnalyse(image: string, hint: string) {
+  let lastError = "groq failed";
+  for (const model of GROQ_MODELS) {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_KEY}` },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        max_tokens: 900,
+        response_format: { type: "json_object" },
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: `${PROMPT}\n${hint ? `The student says the subject is: ${hint}.\n` : ""}${JSON_SHAPE}` },
+            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image}` } },
+          ],
+        }],
+      }),
+    });
+    if (!r.ok) {
+      lastError = `groq ${model} ${r.status} ${(await r.text()).slice(0, 200)}`;
+      continue;
+    }
+    const j = await r.json();
+    try {
+      return JSON.parse(j.choices?.[0]?.message?.content ?? "");
+    } catch {
+      lastError = `groq ${model} bad json`;
+    }
+  }
+  throw new Error(lastError);
+}
+
 async function analyse(image: string, hint: string) {
+  if (GROQ_KEY) {
+    try {
+      return await groqAnalyse(image, hint);
+    } catch (e) {
+      console.error(String(e));
+    }
+  }
   let lastError = "no model";
   for (const model of MODELS) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {

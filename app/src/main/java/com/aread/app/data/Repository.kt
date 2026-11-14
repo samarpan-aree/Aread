@@ -94,6 +94,13 @@ object Repository {
         )
     }
 
+    suspend fun deletePages(paths: List<String>) {
+        paths.forEach { path ->
+            sb.from("textbook_pages").delete { filter { eq("path", path) } }
+            runCatching { sb.storage.from("textbooks").delete(path) }
+        }
+    }
+
     suspend fun myPages(): List<TextbookPage> =
         sb.from("textbook_pages").select { order("created_at", Order.DESCENDING) }.decodeList()
 

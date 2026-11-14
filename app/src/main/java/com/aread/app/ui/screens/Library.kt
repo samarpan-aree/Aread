@@ -57,6 +57,7 @@ fun LibraryScreen() {
     var loaded by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     val results = remember { mutableStateListOf<UploadResult>() }
+    var removing by remember { mutableStateOf<Pair<String, List<TextbookPage>>?>(null) }
 
     LaunchedEffect(refresh) {
         pages = runCatching { Repository.myPages() }.getOrDefault(pages)
@@ -214,7 +215,10 @@ fun LibraryScreen() {
         }
         grouped.forEach { (name, list) ->
             AreadCard(Modifier.padding(bottom = 10.dp).animateContentSize()) {
-                Text(name, style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { removing = name to list }) { Text("Remove") }
+                }
                 Text(
                     "${list.size} page${if (list.size > 1) "s" else ""} · about ${list.sumOf { it.estMinutes }} min of study",
                     style = MaterialTheme.typography.bodyMedium,
@@ -228,5 +232,22 @@ fun LibraryScreen() {
             }
         }
         Spacer(Modifier.height(16.dp))
+    }
+    removing?.let { (name, list) ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Remove $name?") },
+            text = { Text("${list.size} page${if (list.size > 1) "s" else ""} will be removed and no longer used in your plan.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    removing = null
+                    scope.launch {
+                        runCatching { Repository.deletePages(list.map { it.path }) }
+                        refresh++
+                    }
+                }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Keep") } },
+        )
     }
 }

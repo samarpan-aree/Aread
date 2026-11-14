@@ -11,8 +11,9 @@ object Errors {
         if (root is UnknownHostException || root is ConnectException || root is SocketTimeoutException) {
             return "No internet connection. Check your network and try again."
         }
-        val m = (t.message.orEmpty() + " " + root.message.orEmpty()).lowercase()
+        val m = (t.message.orEmpty() + " " + root.message.orEmpty() + " " + t.javaClass.simpleName).lowercase()
         return when {
+            m.contains("timeout") || m.contains("timed out") -> "This is taking too long. Check your connection and try again."
             m.contains("not set up") -> t.message.orEmpty()
             m.contains("invalid login") || m.contains("invalid_credentials") -> "Wrong email or password. Check them and try again."
             m.contains("already registered") || m.contains("already been registered") || m.contains("user_already_exists") ->
@@ -41,7 +42,9 @@ object Errors {
     fun tutor(t: Throwable): String {
         val m = (t.message.orEmpty()).lowercase()
         return when {
-            m.contains("unknownhost") || m.contains("unable to resolve") || m.contains("timeout") || m.contains("failed to connect") ->
+            m.contains("timeout") || m.contains("timed out") ->
+                "That took too long to think through. Please send it again."
+            m.contains("unknownhost") || m.contains("unable to resolve") || m.contains("failed to connect") ->
                 "I can't connect right now. Check your internet and send that again."
             m.contains("401") || m.contains("jwt") -> "Please sign in again so I can help you."
             m.contains("429") -> "You've asked a lot today. Take a short break and come back soon."

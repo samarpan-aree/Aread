@@ -18,7 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -65,6 +68,7 @@ fun TutorScreen() {
     var photoError by remember { mutableStateOf<String?>(null) }
     var showHistory by remember { mutableStateOf(false) }
     var showRedeem by remember { mutableStateOf(false) }
+    var deleteIdx by remember { mutableStateOf<Int?>(null) }
     val listState = rememberLazyListState()
     val keyboard = imeVisible()
 
@@ -116,21 +120,85 @@ fun TutorScreen() {
             TextButton(onClick = { showHistory = true }) { Text("History") }
             TextButton(onClick = { speaker.stop(); TutorStore.newChat(ctx, TUTOR_NAME) }) { Text("New") }
         }
+        val locked = busy || speaker.speaking
+        var menu by remember { mutableStateOf(false) }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Pill("$TUTOR_NAME", !TutorStore.pro, { TutorStore.pro = false })
-            Pill(
-                if (TutorStore.credits >= 0) "$TUTOR_NAME Pro · ${TutorStore.credits}" else "$TUTOR_NAME Pro",
-                TutorStore.pro,
-                { if (TutorStore.credits == 0) showRedeem = true else TutorStore.pro = true },
-            )
+            Box {
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(AreadColors.AccentSoft)
+                        .clickable(enabled = !locked) { menu = true }
+                        .alpha(if (locked) 0.45f else 1f)
+                        .padding(start = 16.dp, end = 10.dp, top = 9.dp, bottom = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (TutorStore.pro) "$TUTOR_NAME Pro" else TUTOR_NAME,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = AreadColors.Accent,
+                    )
+                    Icon(Icons.Outlined.KeyboardArrowDown, null, tint = AreadColors.Accent, modifier = Modifier.size(20.dp))
+                }
+                DropdownMenu(menu, { menu = false }, containerColor = AreadColors.Surface) {
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(TUTOR_NAME, style = MaterialTheme.typography.titleMedium)
+                                Text("Quick help for everyday questions", style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted)
+                            }
+                        },
+                        trailingIcon = { if (!TutorStore.pro) Icon(Icons.Outlined.Check, null, tint = AreadColors.Accent) },
+                        onClick = { TutorStore.pro = false; menu = false },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("$TUTOR_NAME Pro", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "Thinks deeper and explains more",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = AreadColors.Muted,
+                                )
+                                Text(
+                                    when {
+                                        TutorStore.credits < 0 -> "1 credit per reply"
+                                        TutorStore.credits == 0 -> "No credits left"
+                                        TutorStore.credits == 1 -> "1 reply left"
+                                        else -> "${TutorStore.credits} replies left"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (TutorStore.credits == 0) AreadColors.Warn else AreadColors.Accent,
+                                )
+                            }
+                        },
+                        trailingIcon = { if (TutorStore.pro) Icon(Icons.Outlined.Check, null, tint = AreadColors.Accent) },
+                        onClick = {
+                            menu = false
+                            if (TutorStore.credits == 0) showRedeem = true else TutorStore.pro = true
+                        },
+                    )
+                    HorizontalDivider(color = AreadColors.Line)
+                    DropdownMenuItem(
+                        text = { Text("Get more credits", color = AreadColors.Accent) },
+                        onClick = { menu = false; showRedeem = true },
+                    )
+                }
+            }
+            if (TutorStore.pro && TutorStore.credits >= 0) {
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    if (TutorStore.credits == 1) "1 reply left" else "${TutorStore.credits} replies left",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (TutorStore.credits <= 1) AreadColors.Warn else AreadColors.Muted,
+                )
+            }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = { showRedeem = true }) { Text("Get credits") }
             Text("Voice", style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted)
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
             Switch(voice, { voice = it; if (!it) speaker.stop() })
         }
         AnimatedVisibility(!keyboard) {
@@ -158,7 +226,7 @@ fun TutorScreen() {
                             m.photo?.let { path ->
                                 AsyncImage(
                                     File(path), "Your photo",
-                                    Modifier.fillMaxWidth().heightIn(max = 220.dp).clip(RoundedCornerShape(12.dp)),
+                                    Modifier.size(width = 240.dp, height = 170.dp).clip(RoundedCornerShape(12.dp)),
                                     contentScale = ContentScale.Crop,
                                 )
                                 Spacer(Modifier.height(8.dp))
@@ -267,11 +335,25 @@ fun TutorScreen() {
                                 color = AreadColors.Muted,
                             )
                         }
-                        TextButton(onClick = { TutorStore.deleteChat(ctx, i) }) { Text("Delete") }
+                        TextButton(onClick = { deleteIdx = i }) { Text("Delete") }
                     }
                 }
             }
         }
+    }
+    deleteIdx?.let { idx ->
+        AlertDialog(
+            onDismissRequest = { deleteIdx = null },
+            title = { Text("Delete this chat?") },
+            text = { Text("The messages and photos in it will be removed from this phone. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    TutorStore.deleteChat(ctx, idx)
+                    deleteIdx = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteIdx = null }) { Text("Keep") } },
+        )
     }
     if (showRedeem) {
         var code by remember { mutableStateOf("") }
@@ -283,12 +365,16 @@ fun TutorScreen() {
             text = {
                 Column {
                     Text(
-                        "$TUTOR_NAME Pro thinks harder and explains more deeply. Each Pro reply uses 1 credit. You start with 5 free.",
+                        "$TUTOR_NAME Pro thinks deeper and explains more. Each Pro reply uses 1 credit, and everyone starts with 5 free.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "Balance: ${if (TutorStore.credits >= 0) TutorStore.credits else "-"}",
+                        when {
+                            TutorStore.credits < 0 -> "Checking your credits..."
+                            TutorStore.credits == 1 -> "You have 1 Pro reply left"
+                            else -> "You have ${TutorStore.credits} Pro replies left"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Spacer(Modifier.height(10.dp))
