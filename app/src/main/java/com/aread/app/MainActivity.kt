@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.aread.app.data.Prefs
 import com.aread.app.data.Supabase
-import io.github.jan.supabase.handleDeeplinks
+import io.github.jan.supabase.auth.handleDeeplinks
 import com.aread.app.ui.nav.AreadNav
 import com.aread.app.ui.theme.AreadColors
 import com.aread.app.ui.theme.AreadTheme
