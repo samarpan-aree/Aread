@@ -85,6 +85,7 @@ fun AreadNav() {
             !Prefs.introSeen(ctx) -> "intro"
             !authed -> "login"
             else -> {
+                Prefs.setSignedInFlag(ctx, true)
                 profile = loadProfile()
                 if (profile?.name.isNullOrBlank()) "profile" else "welcome"
             }
@@ -144,7 +145,10 @@ fun AreadNav() {
                     profile?.name.orEmpty(),
                     profile?.streakDays ?: 0,
                     Prefs.todayMinutes(ctx),
-                ) { nav.navigate("home") { popUpTo("welcome") { inclusive = true } } }
+                ) {
+                    val next = if (Prefs.permsSeen(ctx)) "home" else "perms_first"
+                    nav.navigate(next) { popUpTo("welcome") { inclusive = true } }
+                }
             }
             composable("intro") {
                 IntroScreen {
@@ -157,7 +161,11 @@ fun AreadNav() {
                     Prefs.setSignedInFlag(ctx, true)
                     scope.launch {
                         profile = loadProfile()
-                        val next = if (profile?.name.isNullOrBlank()) "profile" else "home"
+                        val next = when {
+                            profile?.name.isNullOrBlank() -> "profile"
+                            !Prefs.permsSeen(ctx) -> "perms_first"
+                            else -> "home"
+                        }
                         nav.navigate(next) { popUpTo("login") { inclusive = true } }
                     }
                 }
@@ -175,7 +183,18 @@ fun AreadNav() {
                 }
             }
             composable("style") { StyleScreen { nav.navigate("permissions") } }
-            composable("permissions") { PermissionsScreen { nav.navigate("privacy") } }
+            composable("permissions") {
+                PermissionsScreen {
+                    Prefs.setPermsSeen(ctx)
+                    nav.navigate("privacy")
+                }
+            }
+            composable("perms_first") {
+                PermissionsScreen {
+                    Prefs.setPermsSeen(ctx)
+                    nav.navigate("home") { popUpTo(0) }
+                }
+            }
             composable("privacy") {
                 PrivacyScreen(saving, saveError) {
                     val p = pending ?: profile

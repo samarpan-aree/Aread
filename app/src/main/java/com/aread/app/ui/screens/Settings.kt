@@ -410,6 +410,45 @@ fun AdminScreen() {
                 Spacer(Modifier.height(16.dp))
             }
         }
+        item {
+            var count by remember { mutableStateOf("5") }
+            var credits by remember { mutableStateOf("20") }
+            var codes by remember { mutableStateOf<List<String>>(emptyList()) }
+            var codeErr by remember { mutableStateOf<String?>(null) }
+            val scope = rememberCoroutineScope()
+            val ctx = LocalContext.current
+            AreadCard {
+                Text("Pro credit codes", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Create codes to sell or give away. Each code can be used once.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = AreadColors.Muted,
+                )
+                Spacer(Modifier.height(10.dp))
+                DigitField(count, { count = it }, "How many codes", 3)
+                Spacer(Modifier.height(8.dp))
+                DigitField(credits, { credits = it }, "Credits per code", 4)
+                Spacer(Modifier.height(10.dp))
+                SecondaryButton("Create codes", enabled = (count.toIntOrNull() ?: 0) > 0 && (credits.toIntOrNull() ?: 0) > 0) {
+                    scope.launch {
+                        codeErr = null
+                        runCatching { Repository.adminCodes(count.toInt(), credits.toInt()) }
+                            .onSuccess { codes = it }
+                            .onFailure { codeErr = "Couldn't create codes." }
+                    }
+                }
+                codeErr?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (codes.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    codes.forEach { Text(it, style = MaterialTheme.typography.titleMedium) }
+                    TextButton(onClick = {
+                        val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, codes.joinToString("\n"))
+                        runCatching { ctx.startActivity(Intent.createChooser(i, "Share codes").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }) { Text("Share or copy") }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
         items(users) { u ->
             Text("${u.name} · class ${u.classLevel} · ${u.schoolName}", style = MaterialTheme.typography.bodyMedium)
             Text("streak ${u.streakDays}d · ${u.focusMinutesWeek} min/week", color = AreadColors.Muted, style = MaterialTheme.typography.bodyMedium)

@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.aread.app.MainActivity
@@ -13,7 +15,7 @@ import com.aread.app.R
 import com.aread.app.data.Prefs
 
 object SessionEngine {
-    private const val CHANNEL = "sessions"
+    private const val CHANNEL = "sessions_alarm"
     private const val NOTIF_ID = 2001
 
     fun start(c: Context, minutes: Int, pomodoro: Boolean, strict: Boolean) {
@@ -80,7 +82,20 @@ object SessionEngine {
     private fun notify(c: Context, title: String, text: String) {
         runCatching {
             val nm = c.getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(NotificationChannel(CHANNEL, "Focus sessions", NotificationManager.IMPORTANCE_HIGH))
+            val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val channel = NotificationChannel(CHANNEL, "Focus session alerts", NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(
+                    sound,
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 400, 200, 400, 200, 600)
+            }
+            nm.createNotificationChannel(channel)
             val open = PendingIntent.getActivity(
                 c, 0, Intent(c, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )

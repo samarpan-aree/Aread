@@ -31,6 +31,8 @@ object Errors {
             m.contains("jwt") || m.contains("unauthorized") || m.contains("401") -> "Your session expired. Please sign in again."
             m.contains("429") -> "Too many requests. Please wait a moment."
             m.contains("500") || m.contains("502") || m.contains("503") -> "Our server is busy. Please try again in a moment."
+            m.contains("invalid_code") -> "That code isn't valid or was already used."
+            m.contains("already_referred") -> "You've already used an invite code."
             m.contains("cancel") -> "Cancelled."
             else -> "Something went wrong. Please try again."
         }
@@ -39,7 +41,7 @@ object Errors {
     fun tutor(t: Throwable): String {
         val m = (t.message.orEmpty()).lowercase()
         return when {
-            m.contains("unknownhost") || m.contains("unable to resolve") || m.contains("timeout") || m.contains("connect") ->
+            m.contains("unknownhost") || m.contains("unable to resolve") || m.contains("timeout") || m.contains("failed to connect") ->
                 "I can't connect right now. Check your internet and send that again."
             m.contains("401") || m.contains("jwt") -> "Please sign in again so I can help you."
             m.contains("429") -> "You've asked a lot today. Take a short break and come back soon."

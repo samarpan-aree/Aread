@@ -70,6 +70,7 @@ fun HomeScreen(
                 onSessionDone(minutes)
                 version++
             }
+            ExamCard()
             WeekCard(version)
             ScreenTimeCard()
             PlanCard()
@@ -434,18 +435,24 @@ private fun PlanCard() {
     var items by remember { mutableStateOf<List<StudyItem>>(emptyList()) }
     LaunchedEffect(Unit) {
         val rank = mapOf("hard" to 0, "medium" to 1, "easy" to 2)
-        items = runCatching { Repository.myPages() }.getOrDefault(emptyList())
+        val all = runCatching { Repository.myPages() }.getOrDefault(emptyList())
+            .filter { it.summary.isNotBlank() }
             .sortedBy { rank[it.difficulty] ?: 1 }
             .distinctBy { it.subject + it.chapter }
             .map { StudyItem(it.subject, it.chapter, it.estMinutes) }
+        val shift = if (all.isEmpty()) 0 else java.time.LocalDate.now().dayOfYear % all.size
+        items = all.drop(shift) + all.take(shift)
     }
-    val slots = remember(items) { StudyPlanner.planToday(LocalDateTime.now(), items, preferred) }
+    val now = remember { LocalDateTime.now() }
+    val todaySlots = remember(items) { StudyPlanner.planToday(now, items, preferred) }
+    val tomorrow = todaySlots.isEmpty()
+    val slots = remember(items, tomorrow) {
+        if (tomorrow) StudyPlanner.planToday(now.toLocalDate().plusDays(1).atStartOfDay(), items, preferred) else todaySlots
+    }
     AreadCard(Modifier.animateContentSize()) {
-        Text("Today's plan", style = MaterialTheme.typography.titleLarge)
+        Text(if (tomorrow) "Tomorrow's plan" else "Today's plan", style = MaterialTheme.typography.titleLarge)
+        Text("Refreshes every day", style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted)
         Spacer(Modifier.height(8.dp))
-        if (slots.isEmpty()) {
-            Text("No more good slots today. Tomorrow's plan appears in the morning.", color = AreadColors.Muted)
-        }
         slots.forEach {
             Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconTile(Icons.Outlined.Timer, size = 40.dp)
@@ -455,6 +462,41 @@ private fun PlanCard() {
                     Text(it.reason, style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ExamCard() {
+    val ctx = LocalContext.current
+    var name by remember { mutableStateOf(Prefs.examName(ctx)) }
+    var day by remember { mutableLongStateOf(Prefs.examDay(ctx)) }
+    val left = if (day > 0) day - java.time.LocalDate.now().toEpochDay() else null
+    fun pick() {
+        val base = if (day > 0) java.time.LocalDate.ofEpochDay(day) else java.time.LocalDate.now().plusDays(30)
+        android.app.DatePickerDialog(ctx, { _, y, m, d ->
+            val picked = java.time.LocalDate.of(y, m + 1, d).toEpochDay()
+            if (name.isBlank()) name = "Exam"
+            day = picked
+            Prefs.setExam(ctx, name, picked)
+        }, base.year, base.monthValue - 1, base.dayOfMonth).show()
+    }
+    AreadCard(onClick = { pick() }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(if (left == null) "Exam countdown" else name.ifBlank { "Exam" }, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    when {
+                        left == null -> "Tap to set your exam date and see the days left."
+                        left < 0 -> "This date has passed. Tap to set a new one."
+                        left == 0L -> "Your exam is today. You've got this."
+                        else -> "$left days to go. Tap to change the date."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = AreadColors.Muted,
+                )
+            }
+            if (left != null && left >= 0) Text("$left", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = AreadColors.Accent)
         }
     }
 }

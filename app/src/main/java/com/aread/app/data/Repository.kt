@@ -102,6 +102,13 @@ object Repository {
         return json.decodeFromString(res.bodyAsText())
     }
 
+    suspend fun credits(): CreditRow = sb.postgrest.rpc("my_credits").decodeList<CreditRow>().first()
+
+    suspend fun redeem(code: String): Int = sb.postgrest.rpc("redeem_code", mapOf("p_code" to code)).decodeAs<Int>()
+
+    suspend fun adminCodes(count: Int, credits: Int): List<String> =
+        sb.postgrest.rpc("admin_create_codes", mapOf("n" to count, "credits" to credits)).decodeList<String>()
+
     suspend fun adminStats(): Map<String, Int> = sb.postgrest.rpc("admin_stats").decodeAs()
 
     suspend fun adminAllProfiles(): List<Profile> =

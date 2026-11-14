@@ -1,7 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
-const MODELS = [Deno.env.get("GEMINI_MODEL") ?? "gemini-flash-latest", "gemini-2.5-flash"];
+const MODELS = [Deno.env.get("GEMINI_MODEL") ?? "gemini-3.8-flash", "gemini-flash-latest"];
 const DAILY_LIMIT = Number(Deno.env.get("ANALYZE_DAILY_LIMIT") ?? "60");
 
 const CORS = {
@@ -50,7 +50,7 @@ async function analyse(image: string, hint: string) {
             { inline_data: { mime_type: "image/jpeg", data: image } },
           ],
         }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 700, responseMimeType: "application/json", responseSchema: SCHEMA },
+        generationConfig: { temperature: 0.2, maxOutputTokens: 2000, responseMimeType: "application/json", responseSchema: SCHEMA },
       }),
     });
     if (!r.ok) {

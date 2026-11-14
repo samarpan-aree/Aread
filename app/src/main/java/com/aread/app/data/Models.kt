@@ -102,10 +102,14 @@ data class TutorRequest(
     val imageBase64: String? = null,
     val history: List<TutorTurn> = emptyList(),
     val studying: List<String> = emptyList(),
+    val pro: Boolean = false,
 )
 
 @Serializable
 data class TutorTurn(val role: String, val text: String)
 
 @Serializable
-data class TutorReply(val reply: String, val mode: String = "hint")
+data class TutorReply(val reply: String, val mode: String = "hint", val credits: Int? = null)
+
+@Serializable
+data class CreditRow(val balance: Int = 0, @SerialName("ref_code") val refCode: String = "")

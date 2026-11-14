@@ -1,62 +1,37 @@
 # Aread
 
-Android study app: focus sessions, app and call blocking, an AI tutor named Medha that guides without giving answers, streaks and a weekly leaderboard.
+Aread is an Android app that helps students study without their phone getting in the way. You start a focus session, and the apps that usually eat your evening (social media, short videos, games) and incoming calls are paused until the timer is done. Between sessions it keeps your streak, plans your day from the pages you are studying, and gives you a tutor to ask when you get stuck.
 
-Stack: Kotlin + Jetpack Compose (native Android), Supabase (auth, Postgres, storage, edge functions). Free tier is enough to start.
+It was made by Ar Studio for students in Nepal, but nothing in it is specific to one country.
 
-## What you need to do
+## What it does
 
-### 1. Supabase (10 minutes)
-1. Create a project at supabase.com.
-2. SQL Editor: paste and run `supabase/migrations/001_init.sql`.
-3. Authentication > Providers: turn on Email, Phone (needs an SMS provider such as Twilio), Google, Facebook. Turn **off** "Allow anonymous sign-ins" so there is no guest mode.
-4. Authentication > URL Configuration: add redirect URL `aread://auth`.
-5. Settings > API: copy the Project URL and the `anon` key.
+- **Focus sessions.** Timer or Pomodoro, with a strict mode that cannot be ended early. In normal mode you can only end a session during its last 30%.
+- **App and call blocking.** You choose which apps to pause. Calls from people you have not allowed are screened out during a session.
+- **Stays on track.** The app cannot be uninstalled in the middle of a session, and if you disappear for two days it locks distracting apps until you finish one session.
+- **Study plan.** Photograph your textbook pages or notes. Aread reads the subject, chapter and topics, estimates how long each needs, and builds a fresh plan every day. Photos that are not study material are rejected.
+- **Medha, the tutor.** Medha does not hand over answers. She asks what you have tried and points to the idea you need. If you are still stuck she asks for a photo of your working and shows you which step went wrong. Medha Pro thinks harder and explains more, and is paid for with credits instead of a subscription.
+- **Streaks, weekly chart and leaderboard.** Compare minutes with other students at your school and beyond.
+- **Screen time.** See where your day went, and how much of it was distraction.
+- **Reminders and alerts.** A few well-timed nudges a day, and a sound when your session ends.
+- **Exam countdown, themes, and your own background photo.**
+- **Privacy.** Usage data stays on the phone. Every permission is explained on its own screen before you grant it.
 
-### 2. Hide the AI key (never put it in the app)
-Install the Supabase CLI, then:
+## How it is built
 
-```
-supabase link --project-ref <your-ref>
-supabase secrets set GEMINI_API_KEY=<your key from aistudio.google.com>
-supabase secrets set GROQ_API_KEY=<optional fallback key from console.groq.com>
-supabase functions deploy tutor
-```
+- Android app in Kotlin with Jetpack Compose, in `app/`.
+- Backend on Supabase in `supabase/`: Postgres with row level security, email, Google and phone sign-in, file storage for textbook pages, and edge functions for the tutor and page reading.
+- Secrets such as the tutor service key live only in the Supabase project. The app never holds them.
 
-Models are set by env (`GEMINI_MODEL`, `GROQ_TEXT_MODEL`, `GROQ_VISION_MODEL`) so you can switch to a newer one without changing the app. Check the current model names on each provider's site; free-tier limits and names change. Gemini is the primary (it reads photos of handwritten work), Groq is the automatic fallback. Each student is limited to 60 tutor messages a day (`TUTOR_DAILY_LIMIT`).
+## Building
 
-### 3. Google and Facebook login
-- Google: in Google Cloud Console create an OAuth **Web** client ID and an **Android** client (package `com.aread.app` plus your SHA-1). Put the Web client ID in `secrets.properties` and in Supabase's Google provider.
-- Facebook: create an app at developers.facebook.com and paste its ID and secret into Supabase's Facebook provider.
+1. Copy `secrets.properties.example` to `secrets.properties` and fill in your Supabase URL and public key.
+2. Run the SQL files in `supabase/migrations` in order.
+3. Deploy the functions in `supabase/functions` and add the `GEMINI_API_KEY` secret to the project.
+4. `gradle :app:assembleDebug`
 
-### 4. Configure the app
-```
-cp secrets.properties.example secrets.properties
-# fill SUPABASE_URL, SUPABASE_ANON_KEY, GOOGLE_WEB_CLIENT_ID
-```
-Open the folder in Android Studio and run on a real phone (blocking and call screening do not work well on emulators).
+The GitHub workflow in `.github/workflows/build.yml` does step 4 on every push and attaches the APK to a release, so you can build without a computer. `release.yml` builds a signed bundle for the Play Store. See `docs/PLAY_STORE.md`.
 
-### 5. Assets I could not create (the app runs without the avatar file; that area just stays empty)
-Put these in `app/src/main/assets/`:
-- `medha.glb`: a rigged head or bust with ARKit-style blendshapes (`jawOpen`, `mouthFunnel`, `mouthPucker`, `mouthSmileLeft/Right`, `mouthClose`, `eyeBlinkLeft/Right`). A VRM or a model made in Blender or Avaturn exported as GLB works.
+## Admin
 
-Also add launcher icons (Android Studio: New > Image Asset).
-
-### 6. Make yourself admin
-Sign in once, then in the SQL editor:
-```
-update public.profiles set is_admin = true where id = '<your user uuid from Authentication > Users>';
-```
-Hidden entry: Settings > tap the "Aread 1.0.0" line 7 times. The server checks `is_admin` on every admin call, so the tap pattern is only a door, not the lock.
-
-## How the rules work
-- Tutor: attempts 0-2 give hints only. From the 3rd attempt Medha asks for a photo of the student's work. With a photo, Medha points out only where the mistake is and gives suggestions. The "never give the answer" rule is in the server prompt, so it can't be removed from the app.
-- Inactivity: a background job checks every 3 hours. After 2 days without opening Aread it sends a notification and pauses blocked apps for 60 minutes.
-- Streaks, weekly minutes and the leaderboard are computed in the database (`log_focus_session`), so students can't edit them.
-
-## Known limits
-- Not compiled yet: this was written without the Android SDK. Expect a few small fixes on first build, most likely in the SceneView avatar code (`AvatarView.kt`, one helper function) and supabase-kt calls if library versions moved.
-- The Accessibility-based app blocker is the standard way to do this on Android, but Google Play reviews it closely. Prepare a short demo video and the privacy policy text for the submission.
-- The intro is a Compose text animation; a video can replace it later (Media3 is already included).
-- Lip sync is approximate and driven by the spoken letters from the phone's built-in voice. Much more accurate sync needs a server TTS that returns viseme timings; the `Mouth` interface is where that would plug in.
-- Auto study-time suggestions use simple rules (`StudyPlanner.kt`), not yet the uploaded textbook content.
+Tap the version number in Settings several times to open the hidden admin panel (only for accounts marked as admin in the database). From there you can see user counts and create Pro credit codes.

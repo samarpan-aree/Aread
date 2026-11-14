@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -19,10 +20,16 @@ import java.io.File
 class ChatMsg(val fromStudent: Boolean, val text: String, val photo: String? = null)
 
 @Serializable
-private data class StoredMsg(val s: Boolean, val t: String, val p: String? = null)
+data class StoredMsg(val s: Boolean, val t: String, val p: String? = null)
 
 @Serializable
-private data class StoredChat(val msgs: List<StoredMsg>, val attempts: Int, val needPhoto: Boolean)
+data class StoredChat(
+    val msgs: List<StoredMsg>,
+    val attempts: Int = 0,
+    val needPhoto: Boolean = false,
+    val title: String = "",
+    val ts: Long = 0L,
+)
 
 object TutorStore {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -31,10 +38,14 @@ object TutorStore {
     private var studying: List<String>? = null
 
     val msgs = mutableStateListOf<ChatMsg>()
+    val archive = mutableStateListOf<StoredChat>()
     var attempts by mutableIntStateOf(0)
     var needPhoto by mutableStateOf(false)
     var busy by mutableStateOf(false)
     var toSpeak by mutableStateOf<String?>(null)
+    var pro by mutableStateOf(false)
+    var credits by mutableIntStateOf(-1)
+    var refCode by mutableStateOf("")
 
     private fun greeting(name: String) =
         ChatMsg(false, "Hi, I'm $name. Send me a question and try it first. I'll guide you, and if you get stuck I'll check your working.")
@@ -50,23 +61,79 @@ object TutorStore {
         } else {
             msgs.add(greeting(name))
         }
+        Prefs.tutorArchive(c)?.let {
+            runCatching { json.decodeFromString(ListSerializer(StoredChat.serializer()), it) }.getOrNull()
+        }?.let { archive.clear(); archive.addAll(it) }
+    }
+
+    suspend fun refreshCredits() {
+        runCatching { Repository.credits() }.onSuccess {
+            credits = it.balance
+            refCode = it.refCode
+        }
+    }
+
+    private fun snapshot(): StoredChat {
+        val trimmed = msgs.takeLast(80)
+        val firstQ = trimmed.firstOrNull { it.fromStudent }?.text.orEmpty()
+        return StoredChat(
+            trimmed.map { StoredMsg(it.fromStudent, it.text, it.photo) },
+            attempts, needPhoto, firstQ.take(60), System.currentTimeMillis(),
+        )
     }
 
     private fun save(c: Context) {
-        val trimmed = msgs.takeLast(80)
-        val data = StoredChat(trimmed.map { StoredMsg(it.fromStudent, it.text, it.photo) }, attempts, needPhoto)
-        runCatching { Prefs.setTutorChat(c, json.encodeToString(data)) }
+        runCatching { Prefs.setTutorChat(c, json.encodeToString(snapshot())) }
     }
 
-    fun reset(c: Context, name: String) {
-        msgs.forEach { m -> m.photo?.let { runCatching { File(it).delete() } } }
+    private fun saveArchive(c: Context) {
+        runCatching { Prefs.setTutorArchive(c, json.encodeToString(ListSerializer(StoredChat.serializer()), archive.toList())) }
+    }
+
+    private fun archiveCurrent() {
+        if (msgs.any { it.fromStudent }) {
+            archive.add(0, snapshot())
+            while (archive.size > 30) {
+                val old = archive.removeAt(archive.lastIndex)
+                old.msgs.forEach { m -> m.p?.let { runCatching { File(it).delete() } } }
+            }
+        }
+    }
+
+    private fun resetCurrent(name: String) {
         msgs.clear()
         msgs.add(greeting(name))
         attempts = 0
         needPhoto = false
         busy = false
         toSpeak = null
+    }
+
+    fun newChat(c: Context, name: String) {
+        archiveCurrent()
+        resetCurrent(name)
         save(c)
+        saveArchive(c)
+    }
+
+    fun openChat(c: Context, name: String, index: Int) {
+        val target = archive.getOrNull(index) ?: return
+        archive.removeAt(index)
+        archiveCurrent()
+        msgs.clear()
+        msgs.addAll(target.msgs.map { ChatMsg(it.s, it.t, it.p?.takeIf { p -> File(p).exists() }) })
+        attempts = target.attempts
+        needPhoto = target.needPhoto
+        busy = false
+        save(c)
+        saveArchive(c)
+    }
+
+    fun deleteChat(c: Context, index: Int) {
+        val gone = archive.getOrNull(index) ?: return
+        archive.removeAt(index)
+        gone.msgs.forEach { m -> m.p?.let { runCatching { File(it).delete() } } }
+        saveArchive(c)
     }
 
     fun send(c: Context, name: String, text: String, photo: PreparedImage? = null) {
@@ -85,6 +152,7 @@ object TutorStore {
         save(app)
         val history = msgs.dropLast(1).takeLast(8).map { TutorTurn(if (it.fromStudent) "student" else "tutor", it.text) }
         val attemptNo = attempts
+        val usePro = pro
         scope.launch {
             val reply = runCatching {
                 val ctxList = studying ?: withContext(Dispatchers.IO) {
@@ -94,11 +162,13 @@ object TutorStore {
                 }.also { studying = it }
                 val b64 = photo?.let { android.util.Base64.encodeToString(it.bytes, android.util.Base64.NO_WRAP) }
                 Repository.askTutor(
-                    TutorRequest(message = text, attempts = attemptNo, imageBase64 = b64, history = history, studying = ctxList),
+                    TutorRequest(message = text, attempts = attemptNo, imageBase64 = b64, history = history, studying = ctxList, pro = usePro),
                 )
             }.getOrElse { TutorReply(Errors.tutor(it), "error") }
             msgs.add(ChatMsg(false, reply.reply))
             needPhoto = reply.mode == "ask_photo"
+            reply.credits?.let { credits = it }
+            if (reply.mode == "no_credits") pro = false
             toSpeak = reply.reply
             busy = false
             save(app)
@@ -109,10 +179,15 @@ object TutorStore {
         loaded = false
         studying = null
         msgs.clear()
+        archive.clear()
         attempts = 0
         needPhoto = false
         busy = false
+        pro = false
+        credits = -1
+        refCode = ""
         Prefs.setTutorChat(c, null)
+        Prefs.setTutorArchive(c, null)
         runCatching { File(c.filesDir, "chat").deleteRecursively() }
     }
 }

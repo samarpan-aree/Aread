@@ -28,6 +28,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import com.aread.app.data.Errors
+import com.aread.app.data.Repository
 import com.aread.app.data.ImageUtil
 import com.aread.app.data.PreparedImage
 import com.aread.app.data.TutorStore
@@ -41,6 +44,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun TutorScreen() {
     val ctx = LocalContext.current
@@ -49,14 +53,18 @@ fun TutorScreen() {
     DisposableEffect(Unit) { onDispose { speaker.release() } }
     val has3d = remember { runCatching { ctx.assets.list("")?.contains("medha.glb") == true }.getOrDefault(false) }
 
-    LaunchedEffect(Unit) { TutorStore.load(ctx, TUTOR_NAME) }
+    LaunchedEffect(Unit) {
+        TutorStore.load(ctx, TUTOR_NAME)
+        TutorStore.refreshCredits()
+    }
     val msgs = TutorStore.msgs
     val busy = TutorStore.busy
     val needPhoto = TutorStore.needPhoto
     var input by remember { mutableStateOf("") }
     var voice by remember { mutableStateOf(true) }
     var photoError by remember { mutableStateOf<String?>(null) }
-    var confirmReset by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
+    var showRedeem by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val keyboard = imeVisible()
 
@@ -105,9 +113,24 @@ fun TutorScreen() {
                     color = AreadColors.Muted,
                 )
             }
-            TextButton(onClick = { confirmReset = true }) { Text("New chat") }
+            TextButton(onClick = { showHistory = true }) { Text("History") }
+            TextButton(onClick = { speaker.stop(); TutorStore.newChat(ctx, TUTOR_NAME) }) { Text("New") }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Pill("$TUTOR_NAME", !TutorStore.pro, { TutorStore.pro = false })
+            Pill(
+                if (TutorStore.credits >= 0) "$TUTOR_NAME Pro · ${TutorStore.credits}" else "$TUTOR_NAME Pro",
+                TutorStore.pro,
+                { if (TutorStore.credits == 0) showRedeem = true else TutorStore.pro = true },
+            )
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = { showRedeem = true }) { Text("Get credits") }
             Text("Voice", style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted)
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(6.dp))
             Switch(voice, { voice = it; if (!it) speaker.stop() })
         }
         AnimatedVisibility(!keyboard) {
@@ -214,19 +237,95 @@ fun TutorScreen() {
             ) { Text("Send") }
         }
     }
-    if (confirmReset) {
+    if (showHistory) {
+        ModalBottomSheet(onDismissRequest = { showHistory = false }, containerColor = AreadColors.Surface) {
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+                Text("Past chats", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(10.dp))
+                if (TutorStore.archive.isEmpty()) {
+                    Text("Your earlier chats will show up here.", color = AreadColors.Muted)
+                }
+                TutorStore.archive.toList().forEachIndexed { i, chat ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                speaker.stop()
+                                TutorStore.openChat(ctx, TUTOR_NAME, i)
+                                showHistory = false
+                            }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(chat.title.ifBlank { "Chat" }, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                            Text(
+                                java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+                                    .format(java.util.Date(chat.ts)) + " · ${chat.msgs.size} messages",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = AreadColors.Muted,
+                            )
+                        }
+                        TextButton(onClick = { TutorStore.deleteChat(ctx, i) }) { Text("Delete") }
+                    }
+                }
+            }
+        }
+    }
+    if (showRedeem) {
+        var code by remember { mutableStateOf("") }
+        var msg by remember { mutableStateOf<String?>(null) }
+        var working by remember { mutableStateOf(false) }
         AlertDialog(
-            onDismissRequest = { confirmReset = false },
-            title = { Text("Start a new chat?") },
-            text = { Text("This clears your conversation with $TUTOR_NAME.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    speaker.stop()
-                    TutorStore.reset(ctx, TUTOR_NAME)
-                    confirmReset = false
-                }) { Text("Clear") }
+            onDismissRequest = { showRedeem = false },
+            title = { Text("Pro credits") },
+            text = {
+                Column {
+                    Text(
+                        "$TUTOR_NAME Pro thinks harder and explains more deeply. Each Pro reply uses 1 credit. You start with 5 free.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Balance: ${if (TutorStore.credits >= 0) TutorStore.credits else "-"}",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        code, { code = it.uppercase().take(20); msg = null },
+                        label = { Text("Enter a code") }, singleLine = true,
+                    )
+                    msg?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted, modifier = Modifier.padding(top = 6.dp)) }
+                    if (TutorStore.refCode.isNotBlank()) {
+                        Spacer(Modifier.height(14.dp))
+                        Text("Invite a friend", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "You both get 10 credits when they enter your code: ${TutorStore.refCode.uppercase()}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = AreadColors.Muted,
+                        )
+                        TextButton(onClick = {
+                            val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(
+                                Intent.EXTRA_TEXT,
+                                "Study without distractions with Aread. Use my code ${TutorStore.refCode.uppercase()} in the tutor's Get credits box and we both get 10 free Pro credits.",
+                            )
+                            runCatching { ctx.startActivity(Intent.createChooser(i, "Invite").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }) { Text("Share my code") }
+                    }
+                }
             },
-            dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Keep") } },
+            confirmButton = {
+                TextButton(enabled = code.length >= 4 && !working, onClick = {
+                    scope.launch {
+                        working = true
+                        msg = runCatching { Repository.redeem(code) }
+                            .fold({ TutorStore.credits = it; code = ""; "Done. You now have $it credits." }, { Errors.friendly(it) })
+                        working = false
+                    }
+                }) { Text("Redeem") }
+            },
+            dismissButton = { TextButton(onClick = { showRedeem = false }) { Text("Close") } },
         )
     }
 }

@@ -69,6 +69,14 @@ private fun launch(ctx: Context, intent: Intent) {
     if (!ok) appInfo(ctx)
 }
 
+private fun launchForResult(ctx: Context, intent: Intent) {
+    val ok = runCatching { ctx.startActivity(intent) }.isSuccess
+    if (!ok) {
+        val fallback = runCatching { ctx.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS)) }.isSuccess
+        if (!fallback) appInfo(ctx)
+    }
+}
+
 private fun appInfo(ctx: Context) {
     runCatching {
         ctx.startActivity(
@@ -273,7 +281,7 @@ fun PermissionsScreen(onDone: () -> Unit) {
                     { c -> (c.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager).isAdminActive(adminComponent(c)) },
                     "Turn on protection",
                     {
-                        launch(
+                        launchForResult(
                             ctx,
                             Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
                                 .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent(ctx))

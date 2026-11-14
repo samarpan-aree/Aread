@@ -110,6 +110,31 @@ object Prefs {
     fun signedInFlag(c: Context) = sp(c).getBoolean("signed_in", false)
     fun setSignedInFlag(c: Context, v: Boolean) = sp(c).edit { putBoolean("signed_in", v) }
 
+    fun permsSeen(c: Context) = sp(c).getBoolean("perms_seen", false)
+    fun setPermsSeen(c: Context) = sp(c).edit { putBoolean("perms_seen", true) }
+
+    fun examName(c: Context) = sp(c).getString("exam_name", "") ?: ""
+    fun examDay(c: Context) = sp(c).getLong("exam_day", 0L)
+    fun setExam(c: Context, name: String, epochDay: Long) = sp(c).edit {
+        putString("exam_name", name)
+        putLong("exam_day", epochDay)
+    }
+
+    fun tutorArchive(c: Context): String? = sp(c).getString("tutor_archive", null)
+    fun setTutorArchive(c: Context, v: String?) = sp(c).edit { putString("tutor_archive", v) }
+
+    fun remDay(c: Context) = sp(c).getString("rem_day", "") ?: ""
+    fun remCount(c: Context) = sp(c).getInt("rem_count", 0)
+    fun remSlots(c: Context) = sp(c).getStringSet("rem_slots", emptySet()) ?: emptySet()
+    fun noteReminder(c: Context, day: String, slot: String) {
+        val same = remDay(c) == day
+        sp(c).edit {
+            putString("rem_day", day)
+            putInt("rem_count", if (same) remCount(c) + 1 else 1)
+            putStringSet("rem_slots", if (same) remSlots(c) + slot else setOf(slot))
+        }
+    }
+
     fun tutorChat(c: Context): String? = sp(c).getString("tutor_chat", null)
     fun setTutorChat(c: Context, v: String?) = sp(c).edit { putString("tutor_chat", v) }
 
