@@ -13,14 +13,20 @@ class AppBlockerService : AccessibilityService() {
         if (pkg == packageName) return
 
         val now = System.currentTimeMillis()
-        val locked = Prefs.isFocusing(this) || now < Prefs.forcedLockUntilMs(this)
-        if (!locked) return
-        if (pkg !in Prefs.blockedPackages(this)) return
+        val focusing = Prefs.isFocusing(this)
+        val forced = now < Prefs.forcedLockUntilMs(this)
+        if (!focusing && !forced) return
+
+        val strictLock = forced || Prefs.strict(this)
+        val guard = pkg in Prefs.INSTALLER_PACKAGES || (strictLock && pkg in Prefs.SETTINGS_PACKAGES)
+        val distracting = pkg in Prefs.blockedPackages(this)
+        if (!guard && !distracting) return
 
         startActivity(
             Intent(this, BlockActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 .putExtra("pkg", pkg)
+                .putExtra("guard", guard)
         )
     }
 

@@ -12,21 +12,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.aread.app.MainActivity
 import com.aread.app.data.Prefs
+import com.aread.app.ui.screens.PrimaryButton
+import com.aread.app.ui.theme.AreadColors
 import com.aread.app.ui.theme.AreadTheme
+import com.aread.app.ui.theme.ThemeState
 
 class BlockActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeState.load(this)
+        val guard = intent.getBooleanExtra("guard", false)
         setContent {
             AreadTheme {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(Modifier.fillMaxSize(), color = AreadColors.Paper) {
                     BlockScreen(
+                        guard = guard,
                         forced = System.currentTimeMillis() < Prefs.forcedLockUntilMs(this),
                         onStudy = {
                             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                             finish()
                         },
-                        onHome = { goHome(); finish() },
+                        onHome = {
+                            goHome()
+                            finish()
+                        },
                     )
                 }
             }
@@ -38,29 +47,34 @@ class BlockActivity : ComponentActivity() {
     )
 
     @Deprecated("Back goes home, never back into the blocked app")
-    override fun onBackPressed() { goHome(); finish() }
+    override fun onBackPressed() {
+        goHome()
+        finish()
+    }
 }
 
 @Composable
-private fun BlockScreen(forced: Boolean, onStudy: () -> Unit, onHome: () -> Unit) {
+private fun BlockScreen(guard: Boolean, forced: Boolean, onStudy: () -> Unit, onHome: () -> Unit) {
+    val title = when {
+        guard -> "Locked while you study"
+        forced -> "You've been away from your books."
+        else -> "This one waits until you're done."
+    }
+    val body = when {
+        guard -> "Uninstalling Aread and changing its settings is blocked during a focus session. Finish your session first."
+        forced -> "Distracting apps are paused until you finish a study session."
+        else -> "Your focus session is still running. Finish it first, then it's all yours."
+    }
     Column(
         Modifier.fillMaxSize().padding(28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.Start,
     ) {
-        Text(
-            if (forced) "You've been away from your books." else "This one waits until you're done.",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+        Text(title, style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(12.dp))
-        Text(
-            if (forced) "Distracting apps are paused until you finish a study session."
-            else "Your focus session is still running. Finish it first, then it's all yours.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Text(body, style = MaterialTheme.typography.bodyLarge, color = AreadColors.Muted)
         Spacer(Modifier.height(32.dp))
-        Button(onClick = onStudy, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Back to studying") }
+        PrimaryButton("Back to studying", onClick = onStudy)
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onHome, modifier = Modifier.fillMaxWidth()) { Text("Go to home screen") }
     }

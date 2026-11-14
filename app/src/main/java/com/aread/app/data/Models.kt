@@ -49,7 +49,41 @@ data class SaveProfileParams(
 data class TextbookPage(
     val subject: String = "General",
     val path: String = "",
+    val chapter: String = "",
+    val topics: List<String> = emptyList(),
+    val summary: String = "",
+    val difficulty: String = "medium",
+    @SerialName("est_minutes") val estMinutes: Int = 30,
     @SerialName("created_at") val createdAt: String = "",
+)
+
+@Serializable
+data class TextbookInsert(
+    @SerialName("user_id") val userId: String,
+    val subject: String,
+    val path: String,
+    val chapter: String,
+    val topics: List<String>,
+    val summary: String,
+    val difficulty: String,
+    @SerialName("est_minutes") val estMinutes: Int,
+)
+
+@Serializable
+data class AnalyzeRequest(val imageBase64: String, val subjectHint: String = "")
+
+@Serializable
+data class PageAnalysis(
+    @SerialName("is_study_material") val isStudyMaterial: Boolean = false,
+    val reason: String = "",
+    val readable: Boolean = true,
+    val subject: String = "Other",
+    @SerialName("chapter_or_topic") val chapter: String = "",
+    val topics: List<String> = emptyList(),
+    val summary: String = "",
+    val difficulty: String = "medium",
+    @SerialName("estimated_study_minutes") val estMinutes: Int = 30,
+    @SerialName("has_questions") val hasQuestions: Boolean = false,
 )
 
 @Serializable
@@ -67,6 +101,7 @@ data class TutorRequest(
     val subject: String? = null,
     val imageBase64: String? = null,
     val history: List<TutorTurn> = emptyList(),
+    val studying: List<String> = emptyList(),
 )
 
 @Serializable

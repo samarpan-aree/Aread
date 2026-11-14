@@ -8,6 +8,7 @@ import java.util.Locale
 
 object Prefs {
     const val BREAK_MIN = 5
+    const val END_UNLOCK = 0.7
 
     private fun sp(c: Context) = c.getSharedPreferences("aread", Context.MODE_PRIVATE)
 
@@ -47,6 +48,9 @@ object Prefs {
             putLong("focus_until", if (phase == 1) end else 0L)
         }
     }
+
+    fun sessionStartMs(c: Context) = phaseEnd(c) - focusLen(c) * 60_000L
+    fun endUnlockMs(c: Context) = sessionStartMs(c) + (focusLen(c) * 60_000L * END_UNLOCK).toLong()
 
     fun endSession(c: Context) = sp(c).edit {
         putInt("phase", 0)
@@ -95,10 +99,31 @@ object Prefs {
         }
     }
 
+    fun addPendingLog(c: Context, minutes: Int) =
+        sp(c).edit { putInt("pending_log", sp(c).getInt("pending_log", 0) + minutes) }
+    fun takePendingLog(c: Context): Int {
+        val v = sp(c).getInt("pending_log", 0)
+        if (v > 0) sp(c).edit { putInt("pending_log", 0) }
+        return v
+    }
+
+    fun signedInFlag(c: Context) = sp(c).getBoolean("signed_in", false)
+    fun setSignedInFlag(c: Context, v: Boolean) = sp(c).edit { putBoolean("signed_in", v) }
+
+    fun tutorChat(c: Context): String? = sp(c).getString("tutor_chat", null)
+    fun setTutorChat(c: Context, v: String?) = sp(c).edit { putString("tutor_chat", v) }
+
     fun cachedProfile(c: Context): String? = sp(c).getString("profile_cache", null)
     fun setCachedProfile(c: Context, v: String?) = sp(c).edit { putString("profile_cache", v) }
     fun pendingSync(c: Context) = sp(c).getBoolean("pending_sync", false)
     fun setPendingSync(c: Context, v: Boolean) = sp(c).edit { putBoolean("pending_sync", v) }
+
+    val INSTALLER_PACKAGES = setOf(
+        "com.google.android.packageinstaller", "com.android.packageinstaller",
+        "com.miui.packageinstaller", "com.samsung.android.packageinstaller",
+    )
+
+    val SETTINGS_PACKAGES = setOf("com.android.settings", "com.miui.securitycenter")
 
     val DEFAULT_BLOCKED = setOf(
         "com.instagram.android", "com.facebook.katana", "com.zhiliaoapp.musically",

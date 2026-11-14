@@ -2,6 +2,7 @@ package com.aread.app.ui.screens
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -33,7 +34,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import coil.compose.AsyncImage
+import com.aread.app.blocking.SessionEngine
+import com.aread.app.blocking.StudyItem
 import com.aread.app.blocking.StudyPlanner
+import com.aread.app.data.Repository
 import com.aread.app.data.Prefs
 import com.aread.app.data.Profile
 import com.aread.app.data.ScreenTime
@@ -154,18 +158,11 @@ private fun FocusCard(onOpenSetup: () -> Unit, onFinished: (Int) -> Unit) {
     LaunchedEffect(Unit) {
         while (true) {
             now = System.currentTimeMillis()
-            val phase = Prefs.phase(ctx)
-            if (phase != 0 && now >= Prefs.phaseEnd(ctx)) {
-                val len = Prefs.focusLen(ctx)
-                if (phase == 1) {
-                    Prefs.addMinutes(ctx, len)
-                    today = Prefs.todayMinutes(ctx)
-                    onFinished(len)
-                    if (Prefs.pomodoro(ctx)) Prefs.startPhase(ctx, 2, Prefs.BREAK_MIN) else Prefs.endSession(ctx)
-                } else {
-                    Prefs.startPhase(ctx, 1, len)
-                }
-            }
+            val pending = Prefs.takePendingLog(ctx)
+            if (pending > 0) onFinished(pending)
+            val done = SessionEngine.tick(ctx)
+            if (done > 0) onFinished(done)
+            today = Prefs.todayMinutes(ctx)
             delay(500)
         }
     }
@@ -257,31 +254,48 @@ private fun FocusCard(onOpenSetup: () -> Unit, onFinished: (Int) -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
             PrimaryButton("Start focus session") {
-                Prefs.beginSession(ctx, minutes, pomodoro, strict)
+                SessionEngine.start(ctx, minutes, pomodoro, strict)
                 now = System.currentTimeMillis()
             }
         } else {
-            if (Prefs.strict(ctx) && phase == 1) {
-                Text(
-                    "Strict mode is on. You can leave when the timer ends.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = AreadColors.Muted,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
-            } else {
+            val strictOn = Prefs.strict(ctx)
+            val unlockMs = Prefs.endUnlockMs(ctx)
+            val canEnd = phase == 2 || (!strictOn && now >= unlockMs)
+            if (canEnd) {
                 SecondaryButton(if (phase == 1) "End session" else "Stop pomodoro") {
-                    if (phase == 1) {
-                        val len = Prefs.focusLen(ctx)
-                        val start = Prefs.phaseEnd(ctx) - len * 60_000L
-                        val done = ((System.currentTimeMillis() - start) / 60_000L).toInt()
-                        if (done >= 1) {
-                            Prefs.addMinutes(ctx, done)
-                            today = Prefs.todayMinutes(ctx)
-                            onFinished(done)
-                        }
-                    }
-                    Prefs.endSession(ctx)
+                    val done = SessionEngine.endEarly(ctx)
+                    today = Prefs.todayMinutes(ctx)
+                    if (done > 0) onFinished(done)
                     now = System.currentTimeMillis()
+                }
+            } else {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(AreadColors.AccentSoft)
+                        .padding(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (strictOn) {
+                        Text("Strict mode is on", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "You can leave when the timer ends.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = AreadColors.Muted,
+                        )
+                    } else {
+                        Text(
+                            "You can end this session in ${fmtClock((unlockMs - now) / 1000)}",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            "Ending early opens for the last 30% of the time. Stay with it.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = AreadColors.Muted,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
                 }
             }
         }
@@ -417,8 +431,16 @@ private fun PlanCard() {
             else -> LocalTime.of(18, 30)
         }
     }
-    val slots = remember { StudyPlanner.planToday(LocalDateTime.now(), listOf("Maths", "Science"), preferred) }
-    AreadCard {
+    var items by remember { mutableStateOf<List<StudyItem>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        val rank = mapOf("hard" to 0, "medium" to 1, "easy" to 2)
+        items = runCatching { Repository.myPages() }.getOrDefault(emptyList())
+            .sortedBy { rank[it.difficulty] ?: 1 }
+            .distinctBy { it.subject + it.chapter }
+            .map { StudyItem(it.subject, it.chapter, it.estMinutes) }
+    }
+    val slots = remember(items) { StudyPlanner.planToday(LocalDateTime.now(), items, preferred) }
+    AreadCard(Modifier.animateContentSize()) {
         Text("Today's plan", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
         if (slots.isEmpty()) {
@@ -429,7 +451,7 @@ private fun PlanCard() {
                 IconTile(Icons.Outlined.Timer, size = 40.dp)
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text("%02d:%02d · %d min".format(it.start.hour, it.start.minute, it.minutes), style = MaterialTheme.typography.titleMedium)
+                    Text("%02d:%02d · %d min · %s".format(it.start.hour, it.start.minute, it.minutes, it.title), style = MaterialTheme.typography.titleMedium)
                     Text(it.reason, style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted)
                 }
             }

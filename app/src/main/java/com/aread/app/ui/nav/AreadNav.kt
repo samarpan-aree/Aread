@@ -1,7 +1,17 @@
 package com.aread.app.ui.nav
 
 import android.widget.Toast
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import com.aread.app.data.TutorStore
+import io.github.jan.supabase.auth.status.SessionStatus
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -67,16 +77,28 @@ fun AreadNav() {
 
     LaunchedEffect(Unit) {
         Repository.restoreSession()
+        val status = Repository.sessionStatus.value
+        val authed = Repository.isSignedIn ||
+            (Prefs.signedInFlag(ctx) && status !is SessionStatus.NotAuthenticated)
         start = when {
             !Prefs.introSeen(ctx) -> "intro"
-            !Repository.isSignedIn -> "login"
+            !authed -> "login"
             else -> {
                 profile = loadProfile()
-                if (profile?.name.isNullOrBlank()) "profile" else "home"
+                if (profile?.name.isNullOrBlank()) "profile" else "welcome"
             }
         }
     }
-    val startDest = start ?: return
+    val startDest = start
+    if (startDest == null) {
+        Box(Modifier.fillMaxSize().background(AreadColors.Paper), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(96.dp).clip(RoundedCornerShape(28.dp)).background(AreadColors.Accent),
+                contentAlignment = Alignment.Center,
+            ) { BookGlyph(MaterialTheme.colorScheme.onPrimary, Modifier.size(60.dp)) }
+        }
+        return
+    }
 
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
@@ -111,7 +133,18 @@ fun AreadNav() {
             nav,
             startDestination = startDest,
             modifier = Modifier.padding(pad).consumeWindowInsets(pad).imePadding(),
+            enterTransition = { fadeIn(tween(260)) + slideInHorizontally(tween(320)) { it / 14 } },
+            exitTransition = { fadeOut(tween(160)) },
+            popEnterTransition = { fadeIn(tween(260)) + slideInHorizontally(tween(320)) { -it / 14 } },
+            popExitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(260)) { it / 14 } },
         ) {
+            composable("welcome") {
+                WelcomeScreen(
+                    profile?.name.orEmpty(),
+                    profile?.streakDays ?: 0,
+                    Prefs.todayMinutes(ctx),
+                ) { nav.navigate("home") { popUpTo("welcome") { inclusive = true } } }
+            }
             composable("intro") {
                 IntroScreen {
                     Prefs.setIntroSeen(ctx)
@@ -120,6 +153,7 @@ fun AreadNav() {
             }
             composable("login") {
                 LoginScreen {
+                    Prefs.setSignedInFlag(ctx, true)
                     scope.launch {
                         profile = loadProfile()
                         val next = if (profile?.name.isNullOrBlank()) "profile" else "home"
@@ -194,6 +228,8 @@ fun AreadNav() {
                         scope.launch {
                             runCatching { Repository.signOut() }
                             Prefs.setCachedProfile(ctx, null)
+                            Prefs.setSignedInFlag(ctx, false)
+                            TutorStore.forgetOnSignOut(ctx)
                             profile = null
                             pending = null
                             nav.navigate("login") { popUpTo(0) }
