@@ -74,6 +74,8 @@ fun SettingsScreen(
     onAdminUnlocked: () -> Unit,
 ) {
     val ctx = LocalContext.current
+    val adminScope = rememberCoroutineScope()
+    var timerOn by remember { mutableStateOf(Prefs.timerOverlay(ctx)) }
     var blockCalls by remember { mutableStateOf(Prefs.blockCalls(ctx)) }
     var strict by remember { mutableStateOf(Prefs.strictDefault(ctx)) }
     var goalDialog by remember { mutableStateOf(false) }
@@ -159,6 +161,10 @@ fun SettingsScreen(
                 Switch(strict, { strict = it; Prefs.setStrictDefault(ctx, it) })
             }
             HorizontalDivider(color = AreadColors.Line)
+            SettingRow("Timer over other apps", "Show the time left in a small pill while you focus.") {
+                Switch(timerOn, { timerOn = it; Prefs.setTimerOverlay(ctx, it) })
+            }
+            HorizontalDivider(color = AreadColors.Line)
             SettingRow("Silence calls while focusing", "Starred contacts still ring.") {
                 Switch(blockCalls, { blockCalls = it; Prefs.setBlockCalls(ctx, it) })
             }
@@ -188,9 +194,13 @@ fun SettingsScreen(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.align(Alignment.CenterHorizontally).clickable {
                 taps++
-                if (taps >= 7 && profile?.isAdmin == true) {
+                if (taps >= 7) {
                     taps = 0
-                    onAdminUnlocked()
+                    adminScope.launch {
+                        val ok = runCatching { Repository.isAdmin() }.getOrDefault(false)
+                        if (ok) onAdminUnlocked()
+                        else android.widget.Toast.makeText(ctx, "This account isn't an admin.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             },
         )

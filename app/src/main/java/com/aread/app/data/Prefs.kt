@@ -110,6 +110,11 @@ object Prefs {
     fun signedInFlag(c: Context) = sp(c).getBoolean("signed_in", false)
     fun setSignedInFlag(c: Context, v: Boolean) = sp(c).edit { putBoolean("signed_in", v) }
 
+    fun timerOverlay(c: Context) = sp(c).getBoolean("timer_overlay", true)
+    fun setTimerOverlay(c: Context, v: Boolean) = sp(c).edit { putBoolean("timer_overlay", v) }
+    fun signupName(c: Context) = sp(c).getString("signup_name", "") ?: ""
+    fun setSignupName(c: Context, v: String) = sp(c).edit { putString("signup_name", v) }
+
     fun permsSeen(c: Context) = sp(c).getBoolean("perms_seen", false)
     fun setPermsSeen(c: Context) = sp(c).edit { putBoolean("perms_seen", true) }
 

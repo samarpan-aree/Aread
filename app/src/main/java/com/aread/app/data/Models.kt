@@ -113,3 +113,9 @@ data class TutorReply(val reply: String, val mode: String = "hint", val credits:
 
 @Serializable
 data class CreditRow(val balance: Int = 0, @SerialName("ref_code") val refCode: String = "")
+
+@Serializable
+data class ConfigRow(val key: String, val value: String)
+
+@Serializable
+data class Pack(val name: String, val credits: Int, val price: String, val note: String = "")

@@ -255,7 +255,7 @@ private fun SocialButton(letter: String, text: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun LoginScreen(onSignedIn: () -> Unit) {
+fun LoginScreen(onCreateAccount: () -> Unit, onSignedIn: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var mode by remember { mutableStateOf("choose") }
@@ -316,14 +316,7 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                     run { Repository.signInEmail(email.trim(), password) }
                 }
                 Spacer(Modifier.height(8.dp))
-                SecondaryButton("Create account", enabled = emailOk && password.length >= 6 && !busy) {
-                    run {
-                        Repository.signUpEmail(email.trim(), password)
-                        if (!Repository.isSignedIn) {
-                            notice = "Almost done. We sent a link to ${email.trim()}. Open it, then come back and tap Sign in."
-                        }
-                    }
-                }
+                TextButton(onClick = onCreateAccount) { Text("New here? Create an account") }
                 TextButton(onClick = { mode = "choose"; error = null; notice = null }) { Text("Other ways to sign in") }
             }
             "phone" -> {
@@ -534,6 +527,98 @@ fun StyleScreen(onDone: () -> Unit) {
             Prefs.setBestTime(ctx, best)
             Prefs.setDailyGoal(ctx, goal.toInt())
             onDone()
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+
+@Composable
+fun SignUpScreen(onBack: () -> Unit, onSignedIn: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    var finished by remember { mutableStateOf(false) }
+    val emailOk = remember(email) { android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches() }
+    val match = password == confirm
+    val ok = name.trim().length >= 2 && emailOk && password.length >= 6 && match
+    androidx.activity.compose.BackHandler(onBack = onBack)
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
+        TextButton(onClick = onBack) { Text("Back") }
+        Spacer(Modifier.height(8.dp))
+        Text("Create your account", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "It takes a minute. You'll add your school details next.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = AreadColors.Muted,
+            modifier = Modifier.padding(top = 6.dp, bottom = 22.dp),
+        )
+        Field(name, { name = it.take(60); error = null }, "Full name")
+        Spacer(Modifier.height(10.dp))
+        Field(email, { email = it; error = null }, "Email", KeyboardType.Email)
+        if (email.isNotBlank() && !emailOk) {
+            Text("Enter a valid email like name@example.com", style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted, modifier = Modifier.padding(top = 4.dp))
+        }
+        Spacer(Modifier.height(10.dp))
+        Field(password, { password = it; error = null }, "Password (at least 6 characters)", KeyboardType.Password, secret = true)
+        Spacer(Modifier.height(10.dp))
+        Field(confirm, { confirm = it; error = null }, "Confirm password", KeyboardType.Password, secret = true)
+        if (confirm.isNotEmpty() && !match) {
+            Text("Passwords don't match", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "By creating an account you agree to the privacy policy shown on the next screens.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = AreadColors.Muted,
+        )
+        Spacer(Modifier.height(16.dp))
+        PrimaryButton("Create account", enabled = ok && !busy, loading = busy) {
+            scope.launch {
+                busy = true
+                error = null
+                notice = null
+                val signUp = runCatching { Repository.signUpEmail(email.trim(), password) }
+                if (!Repository.isSignedIn) {
+                    runCatching { Repository.signInEmail(email.trim(), password) }
+                }
+                busy = false
+                if (Repository.isSignedIn) {
+                    if (!finished) {
+                        finished = true
+                        Prefs.setSignupName(ctx, name.trim())
+                        onSignedIn()
+                    }
+                } else if (signUp.isFailure) {
+                    error = Errors.friendly(signUp.exceptionOrNull()!!)
+                } else {
+                    notice = "If this email is new, we sent a link to ${email.trim()}. Open it, then sign in. If you already have an account, for example with Google, go back and use Sign in or Continue with Google."
+                }
+            }
+        }
+        AnimatedVisibility(error != null || notice != null) {
+            val isError = error != null
+            Row(
+                Modifier
+                    .padding(top = 14.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (isError) MaterialTheme.colorScheme.error.copy(alpha = 0.1f) else AreadColors.AccentSoft)
+                    .padding(14.dp),
+            ) {
+                Text(
+                    error ?: notice.orEmpty(),
+                    color = if (isError) MaterialTheme.colorScheme.error else AreadColors.Ink,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
         Spacer(Modifier.height(24.dp))
     }

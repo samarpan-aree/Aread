@@ -113,6 +113,13 @@ object Repository {
 
     suspend fun redeem(code: String): Int = sb.postgrest.rpc("redeem_code", mapOf("p_code" to code)).decodeAs<Int>()
 
+    suspend fun claimDaily(): Int = sb.postgrest.rpc("claim_daily_credit").decodeAs<Int>()
+
+    suspend fun config(): Map<String, String> =
+        sb.from("app_config").select().decodeList<ConfigRow>().associate { it.key to it.value }
+
+    suspend fun isAdmin(): Boolean = sb.postgrest.rpc("is_admin").decodeAs<Boolean>()
+
     suspend fun adminCodes(count: Int, credits: Int): List<String> =
         sb.postgrest.rpc("admin_create_codes", mapOf("n" to count, "credits" to credits)).decodeList<String>()
 

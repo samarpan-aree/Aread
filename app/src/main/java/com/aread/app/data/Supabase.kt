@@ -11,7 +11,14 @@ import kotlin.time.Duration.Companion.seconds
 object Supabase {
     val client by lazy {
         createSupabaseClient(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY) {
-            requestTimeout = 90.seconds
+            requestTimeout = 120.seconds
+            httpConfig {
+                install(io.ktor.client.plugins.HttpTimeout) {
+                    requestTimeoutMillis = 120_000
+                    connectTimeoutMillis = 20_000
+                    socketTimeoutMillis = 120_000
+                }
+            }
             install(Auth) {
                 scheme = "aread"
                 host = "auth"

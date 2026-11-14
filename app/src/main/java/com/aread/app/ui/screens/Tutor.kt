@@ -49,7 +49,7 @@ import java.io.File
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun TutorScreen() {
+fun TutorScreen(onOpenCredits: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val speaker = remember { LipSyncSpeaker(ctx) }
@@ -67,7 +67,6 @@ fun TutorScreen() {
     var voice by remember { mutableStateOf(true) }
     var photoError by remember { mutableStateOf<String?>(null) }
     var showHistory by remember { mutableStateOf(false) }
-    var showRedeem by remember { mutableStateOf(false) }
     var deleteIdx by remember { mutableStateOf<Int?>(null) }
     val listState = rememberLazyListState()
     val keyboard = imeVisible()
@@ -178,13 +177,13 @@ fun TutorScreen() {
                         trailingIcon = { if (TutorStore.pro) Icon(Icons.Outlined.Check, null, tint = AreadColors.Accent) },
                         onClick = {
                             menu = false
-                            if (TutorStore.credits == 0) showRedeem = true else TutorStore.pro = true
+                            if (TutorStore.credits == 0) onOpenCredits() else TutorStore.pro = true
                         },
                     )
                     HorizontalDivider(color = AreadColors.Line)
                     DropdownMenuItem(
                         text = { Text("Get more credits", color = AreadColors.Accent) },
-                        onClick = { menu = false; showRedeem = true },
+                        onClick = { menu = false; onOpenCredits() },
                     )
                 }
             }
@@ -353,65 +352,6 @@ fun TutorScreen() {
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { deleteIdx = null }) { Text("Keep") } },
-        )
-    }
-    if (showRedeem) {
-        var code by remember { mutableStateOf("") }
-        var msg by remember { mutableStateOf<String?>(null) }
-        var working by remember { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { showRedeem = false },
-            title = { Text("Pro credits") },
-            text = {
-                Column {
-                    Text(
-                        "$TUTOR_NAME Pro thinks deeper and explains more. Each Pro reply uses 1 credit, and everyone starts with 5 free.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        when {
-                            TutorStore.credits < 0 -> "Checking your credits..."
-                            TutorStore.credits == 1 -> "You have 1 Pro reply left"
-                            else -> "You have ${TutorStore.credits} Pro replies left"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        code, { code = it.uppercase().take(20); msg = null },
-                        label = { Text("Enter a code") }, singleLine = true,
-                    )
-                    msg?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted, modifier = Modifier.padding(top = 6.dp)) }
-                    if (TutorStore.refCode.isNotBlank()) {
-                        Spacer(Modifier.height(14.dp))
-                        Text("Invite a friend", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "You both get 10 credits when they enter your code: ${TutorStore.refCode.uppercase()}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = AreadColors.Muted,
-                        )
-                        TextButton(onClick = {
-                            val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(
-                                Intent.EXTRA_TEXT,
-                                "Study without distractions with Aread. Use my code ${TutorStore.refCode.uppercase()} in the tutor's Get credits box and we both get 10 free Pro credits.",
-                            )
-                            runCatching { ctx.startActivity(Intent.createChooser(i, "Invite").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                        }) { Text("Share my code") }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(enabled = code.length >= 4 && !working, onClick = {
-                    scope.launch {
-                        working = true
-                        msg = runCatching { Repository.redeem(code) }
-                            .fold({ TutorStore.credits = it; code = ""; "Done. You now have $it credits." }, { Errors.friendly(it) })
-                        working = false
-                    }
-                }) { Text("Redeem") }
-            },
-            dismissButton = { TextButton(onClick = { showRedeem = false }) { Text("Close") } },
         )
     }
 }

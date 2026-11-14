@@ -458,7 +458,7 @@ private fun PlanCard() {
                 IconTile(Icons.Outlined.Timer, size = 40.dp)
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text("%02d:%02d · %d min · %s".format(it.start.hour, it.start.minute, it.minutes, it.title), style = MaterialTheme.typography.titleMedium)
+                    Text("${it.start.format(java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.ENGLISH))} · ${it.minutes} min · ${it.title}", style = MaterialTheme.typography.titleMedium)
                     Text(it.reason, style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted)
                 }
             }

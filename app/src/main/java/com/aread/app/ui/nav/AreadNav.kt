@@ -156,8 +156,22 @@ fun AreadNav() {
                     nav.navigate("login") { popUpTo("intro") { inclusive = true } }
                 }
             }
+            composable("signup") {
+                SignUpScreen(onBack = { nav.popBackStack() }) {
+                    Prefs.setSignedInFlag(ctx, true)
+                    scope.launch {
+                        profile = loadProfile()
+                        val next = when {
+                            profile?.name.isNullOrBlank() -> "profile"
+                            !Prefs.permsSeen(ctx) -> "perms_first"
+                            else -> "home"
+                        }
+                        nav.navigate(next) { popUpTo(0) }
+                    }
+                }
+            }
             composable("login") {
-                LoginScreen {
+                LoginScreen(onCreateAccount = { nav.navigate("signup") }) {
                     Prefs.setSignedInFlag(ctx, true)
                     scope.launch {
                         profile = loadProfile()
@@ -171,7 +185,7 @@ fun AreadNav() {
                 }
             }
             composable("profile") {
-                ProfileSetupScreen(profile) { p ->
+                ProfileSetupScreen((profile ?: Profile(id = Repository.userId.orEmpty())).let { if (it.name.isBlank()) it.copy(name = Prefs.signupName(ctx)) else it }) { p ->
                     pending = p
                     nav.navigate("goals")
                 }
@@ -235,7 +249,8 @@ fun AreadNav() {
                     },
                 )
             }
-            composable("tutor") { TutorScreen() }
+            composable("tutor") { TutorScreen(onOpenCredits = { nav.navigate("credits") }) }
+            composable("credits") { CreditsScreen(onBack = { nav.popBackStack() }) }
             composable("library") { LibraryScreen() }
             composable("board") { LeaderboardScreen(profile?.name.orEmpty()) }
             composable("settings") {

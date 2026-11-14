@@ -46,6 +46,7 @@ async function groqAnalyse(image: string, hint: string) {
     const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_KEY}` },
+      signal: AbortSignal.timeout(30000),
       body: JSON.stringify({
         model,
         temperature: 0.2,
@@ -87,6 +88,7 @@ async function analyse(image: string, hint: string) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
+      signal: AbortSignal.timeout(45000),
       body: JSON.stringify({
         contents: [{
           role: "user",
@@ -148,6 +150,6 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     console.error(String(e));
-    return reply({ error: "analysis_failed" }, 500);
+    return reply({ error: "analysis_failed", detail: String(e).slice(0, 300) }, 500);
   }
 });

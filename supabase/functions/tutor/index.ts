@@ -3,6 +3,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const MODELS = [Deno.env.get("GEMINI_MODEL") ?? "gemini-3.8-flash", "gemini-flash-latest"];
 const PRO_MODELS = [Deno.env.get("PRO_MODEL") ?? "gemini-pro-latest", "gemini-3.8-flash", "gemini-flash-latest"];
+const NVIDIA_KEY = Deno.env.get("NVIDIA_KEY") ?? "";
+const NVIDIA_MODEL = Deno.env.get("NVIDIA_MODEL") ?? "nvidia/nemotron-3-ultra-500b-a50b";
 const DAILY_LIMIT = Number(Deno.env.get("TUTOR_DAILY_LIMIT") ?? "60");
 
 const CORS = {
@@ -57,6 +59,7 @@ async function gemini(models: string[], budget: number, system: string, history:
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
+      signal: AbortSignal.timeout(45000),
       body: JSON.stringify({
         system_instruction: { parts: [{ text: system }] },
         contents,
@@ -76,6 +79,26 @@ async function gemini(models: string[], budget: number, system: string, history:
     lastError = `${model} empty`;
   }
   throw new Error(lastError);
+}
+
+async function nvidia(system: string, history: Turn[], message: string, budget: number): Promise<string> {
+  const messages = [
+    { role: "system", content: system },
+    ...history.map((h) => ({ role: h.role === "tutor" ? "assistant" : "user", content: String(h.text).slice(0, 1500) })),
+    { role: "user", content: message },
+  ];
+  const r = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${NVIDIA_KEY}` },
+    body: JSON.stringify({ model: NVIDIA_MODEL, messages, temperature: 0.5, top_p: 0.9, max_tokens: budget }),
+    signal: AbortSignal.timeout(70000),
+  });
+  if (!r.ok) throw new Error(`nvidia ${NVIDIA_MODEL} ${r.status} ${(await r.text()).slice(0, 200)}`);
+  const j = await r.json();
+  const raw = String(j.choices?.[0]?.message?.content ?? "");
+  const text = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  if (!text) throw new Error("nvidia empty");
+  return text;
 }
 
 function reply(body: unknown, status = 200) {
@@ -127,7 +150,17 @@ Deno.serve(async (req) => {
     const mode = image ? "photo_review" : "hint";
     const key = pro ? (image ? "pro_photo" : "pro_hint") : mode;
     const context = studying.length ? `\nThe student is currently studying: ${studying.join("; ")}.` : "";
-    const text = await gemini(pro ? PRO_MODELS : MODELS, pro ? 3000 : 1500, PROMPTS[key] + context, history, message || "Please check my attempt.", image);
+    const prompt = PROMPTS[key] + context;
+    const ask = message || "Please check my attempt.";
+    let text = "";
+    if (pro && NVIDIA_KEY && !image) {
+      try {
+        text = await nvidia(prompt, history, ask, 1800);
+      } catch (e) {
+        console.error(String(e));
+      }
+    }
+    if (!text) text = await gemini(pro ? PRO_MODELS : MODELS, pro ? 3000 : 1500, prompt, history, ask, image);
     return reply({ reply: text, mode, credits });
   } catch (e) {
     console.error(String(e));
