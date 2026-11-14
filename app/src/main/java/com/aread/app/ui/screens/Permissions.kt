@@ -418,7 +418,7 @@ fun PermissionsScreen(onDone: () -> Unit) {
                     Box(Modifier.weight(1f)) { SecondaryButton("Back") { index-- } }
                 }
                 Box(Modifier.weight(1f)) {
-                    val next = { if (index < last) index++ else onDone() }
+                    val next: () -> Unit = { if (index < last) index++ else onDone() }
                     if (granted == true) PrimaryButton("Continue", onClick = next) else SecondaryButton("Continue", onClick = next)
                 }
             }
