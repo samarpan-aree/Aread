@@ -8,6 +8,7 @@ import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.storage.Storage
 import kotlin.time.Duration.Companion.seconds
 
+@OptIn(io.github.jan.supabase.annotations.SupabaseInternal::class)
 object Supabase {
     val client by lazy {
         createSupabaseClient(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY) {
