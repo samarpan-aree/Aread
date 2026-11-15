@@ -1,9 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
-const MODELS = [Deno.env.get("GEMINI_MODEL") ?? "gemini-3.8-flash", "gemini-flash-latest"];
-const GROQ_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
-const GROQ_MODELS = [Deno.env.get("GROQ_VISION_MODEL") ?? "meta-llama/llama-4-scout-17b-16e-instruct"];
 const DAILY_LIMIT = Number(Deno.env.get("ANALYZE_DAILY_LIMIT") ?? "60");
 
 const CORS = {
@@ -40,79 +36,125 @@ function reply(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
-async function groqAnalyse(image: string, hint: string) {
-  let lastError = "groq failed";
-  for (const model of GROQ_MODELS) {
-    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_KEY}` },
-      signal: AbortSignal.timeout(30000),
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        max_tokens: 900,
-        response_format: { type: "json_object" },
-        messages: [{
-          role: "user",
-          content: [
-            { type: "text", text: `${PROMPT}\n${hint ? `The student says the subject is: ${hint}.\n` : ""}${JSON_SHAPE}` },
-            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image}` } },
-          ],
-        }],
-      }),
-    });
-    if (!r.ok) {
-      lastError = `groq ${model} ${r.status} ${(await r.text()).slice(0, 200)}`;
-      continue;
-    }
-    const j = await r.json();
-    try {
-      return JSON.parse(j.choices?.[0]?.message?.content ?? "");
-    } catch {
-      lastError = `groq ${model} bad json`;
-    }
-  }
-  throw new Error(lastError);
+const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+const GROQ_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
+const NVIDIA_KEY = Deno.env.get("NVIDIA_KEY") ?? "";
+const GEMINI_MODELS = [Deno.env.get("GEMINI_MODEL") ?? "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash"];
+
+const modelCache: Record<string, string[]> = {};
+
+async function listModels(kind: "groq" | "nvidia"): Promise<string[]> {
+  if (modelCache[kind]) return modelCache[kind];
+  const url = kind === "groq" ? "https://api.groq.com/openai/v1/models" : "https://integrate.api.nvidia.com/v1/models";
+  const key = kind === "groq" ? GROQ_KEY : NVIDIA_KEY;
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`${kind} models ${r.status}`);
+  const j = await r.json();
+  const ids: string[] = (j.data ?? []).map((m: { id: string }) => String(m.id));
+  console.log(`${kind} models: ${ids.join(", ").slice(0, 1800)}`);
+  modelCache[kind] = ids;
+  return ids;
 }
 
-async function analyse(image: string, hint: string) {
-  if (GROQ_KEY) {
+function rank(ids: string[], prefs: RegExp[]): string[] {
+  const skip = /whisper|orpheus|guard|safeguard|tts|embed|rerank|reward/i;
+  const out: string[] = [];
+  for (const re of prefs) for (const id of ids) if (re.test(id) && !skip.test(id) && !out.includes(id)) out.push(id);
+  return out;
+}
+
+type OA = { role: string; content: unknown };
+
+async function chat(kind: "groq" | "nvidia", model: string, messages: OA[], maxTokens: number, timeoutMs: number): Promise<string> {
+  const url = kind === "groq" ? "https://api.groq.com/openai/v1/chat/completions" : "https://integrate.api.nvidia.com/v1/chat/completions";
+  const key = kind === "groq" ? GROQ_KEY : NVIDIA_KEY;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: maxTokens }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!r.ok) throw new Error(`${kind} ${model} ${r.status} ${(await r.text()).slice(0, 160)}`);
+  const j = await r.json();
+  const text = String(j.choices?.[0]?.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  if (!text) throw new Error(`${kind} ${model} empty`);
+  return text;
+}
+
+async function viaProvider(kind: "groq" | "nvidia", prefs: RegExp[], messages: OA[], maxTokens: number, timeoutMs: number, first?: string): Promise<string> {
+  if ((kind === "groq" ? GROQ_KEY : NVIDIA_KEY) === "") throw new Error(`${kind} key missing`);
+  const ids = rank(await listModels(kind), prefs);
+  if (first) ids.unshift(first);
+  if (!ids.length) throw new Error(`${kind} no matching model`);
+  let last: unknown = new Error(`${kind} failed`);
+  for (const id of ids.slice(0, 3)) {
     try {
-      return await groqAnalyse(image, hint);
+      return await chat(kind, id, messages, maxTokens, timeoutMs);
     } catch (e) {
+      last = e;
       console.error(String(e));
     }
   }
-  let lastError = "no model";
-  for (const model of MODELS) {
+  throw last;
+}
+
+async function viaGemini(parts: unknown[], system: string | null, history: { role: string; parts: unknown[] }[], maxTokens: number, extra: Record<string, unknown> = {}): Promise<string> {
+  if (!GEMINI_KEY) throw new Error("gemini key missing");
+  let last = "no model";
+  for (const model of GEMINI_MODELS) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(30000),
       body: JSON.stringify({
-        contents: [{
-          role: "user",
-          parts: [
-            { text: hint ? `${PROMPT}\nThe student says the subject is: ${hint}.` : PROMPT },
-            { inline_data: { mime_type: "image/jpeg", data: image } },
-          ],
-        }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 2000, responseMimeType: "application/json", responseSchema: SCHEMA },
+        ...(system ? { system_instruction: { parts: [{ text: system }] } } : {}),
+        contents: [...history, { role: "user", parts }],
+        generationConfig: { temperature: 0.4, maxOutputTokens: maxTokens, ...extra },
       }),
-    });
+    }).catch((e) => ({ ok: false, status: 0, text: async () => String(e), json: async () => ({}) }) as unknown as Response);
     if (!r.ok) {
-      lastError = `${model} ${r.status} ${(await r.text()).slice(0, 200)}`;
+      last = `gemini ${model} ${r.status} ${(await r.text()).slice(0, 120)}`;
+      console.error(last);
       continue;
     }
     const j = await r.json();
-    const text = (j.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
-    try {
-      return JSON.parse(text);
-    } catch {
-      lastError = `${model} bad json`;
-    }
+    const text = (j.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("").trim();
+    if (text) return text;
+    last = `gemini ${model} empty`;
   }
-  throw new Error(lastError);
+  throw new Error(last);
+}
+
+const VISION_PREFS = [/llama-4/, /vision/, /qwen3/, /muse/];
+
+function firstJson(text: string) {
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("no json");
+  return JSON.parse(m[0]);
+}
+
+async function analyse(image: string, hint: string) {
+  const prompt = `${PROMPT}\n${hint ? `The student says the subject is: ${hint}.\n` : ""}${JSON_SHAPE}`;
+  const msgs: OA[] = [{
+    role: "user",
+    content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image}` } }],
+  }];
+  const errors: string[] = [];
+  try {
+    return firstJson(await viaProvider("groq", VISION_PREFS, msgs, 900, 30000));
+  } catch (e) {
+    errors.push(String(e).slice(0, 200));
+  }
+  try {
+    const text = await viaGemini(
+      [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: image } }],
+      null, [], 1500, { responseMimeType: "application/json", responseSchema: SCHEMA },
+    );
+    return firstJson(text);
+  } catch (e) {
+    errors.push(String(e).slice(0, 200));
+  }
+  throw new Error(errors.join(" | "));
 }
 
 Deno.serve(async (req) => {

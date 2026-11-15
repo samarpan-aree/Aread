@@ -119,3 +119,24 @@ data class ConfigRow(val key: String, val value: String)
 
 @Serializable
 data class Pack(val name: String, val credits: Int, val price: String, val note: String = "")
+
+@Serializable
+data class AdminUser(
+    val id: String,
+    val name: String = "",
+    val email: String = "",
+    @SerialName("class_level") val classLevel: String = "",
+    @SerialName("school_name") val schoolName: String = "",
+    @SerialName("streak_days") val streakDays: Int = 0,
+    @SerialName("focus_minutes_week") val focusMinutesWeek: Int = 0,
+    val balance: Int = 0,
+    @SerialName("is_admin") val isAdmin: Boolean = false,
+)
+
+@Serializable
+data class AdminCode(
+    val code: String,
+    val credits: Int = 0,
+    val used: Boolean = false,
+    @SerialName("used_by_name") val usedByName: String? = null,
+)

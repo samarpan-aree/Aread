@@ -1,11 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
-const MODELS = [Deno.env.get("GEMINI_MODEL") ?? "gemini-3.8-flash", "gemini-flash-latest"];
-const PRO_MODELS = [Deno.env.get("PRO_MODEL") ?? "gemini-pro-latest", "gemini-3.8-flash", "gemini-flash-latest"];
-const NVIDIA_KEY = Deno.env.get("NVIDIA_KEY") ?? "";
-const NVIDIA_MODEL = Deno.env.get("NVIDIA_MODEL") ?? "nvidia/nemotron-3-ultra-500b-a50b";
 const DAILY_LIMIT = Number(Deno.env.get("TUTOR_DAILY_LIMIT") ?? "60");
+const NVIDIA_MODEL = Deno.env.get("NVIDIA_MODEL") ?? "";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -45,60 +41,144 @@ The student sent a photo of their own attempt. Read every line carefully. Point 
 
 type Turn = { role: string; text: string };
 
-async function gemini(models: string[], budget: number, system: string, history: Turn[], message: string, image?: string): Promise<string> {
-  const contents = history.map((h) => ({
-    role: h.role === "tutor" ? "model" : "user",
-    parts: [{ text: String(h.text).slice(0, 1500) }],
-  }));
-  const parts: unknown[] = [{ text: message }];
-  if (image) parts.push({ inline_data: { mime_type: "image/jpeg", data: image } });
-  contents.push({ role: "user", parts });
+const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+const GROQ_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
+const NVIDIA_KEY = Deno.env.get("NVIDIA_KEY") ?? "";
+const GEMINI_MODELS = [Deno.env.get("GEMINI_MODEL") ?? "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash"];
 
-  let lastError = "no model";
-  for (const model of models) {
+const modelCache: Record<string, string[]> = {};
+
+async function listModels(kind: "groq" | "nvidia"): Promise<string[]> {
+  if (modelCache[kind]) return modelCache[kind];
+  const url = kind === "groq" ? "https://api.groq.com/openai/v1/models" : "https://integrate.api.nvidia.com/v1/models";
+  const key = kind === "groq" ? GROQ_KEY : NVIDIA_KEY;
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`${kind} models ${r.status}`);
+  const j = await r.json();
+  const ids: string[] = (j.data ?? []).map((m: { id: string }) => String(m.id));
+  console.log(`${kind} models: ${ids.join(", ").slice(0, 1800)}`);
+  modelCache[kind] = ids;
+  return ids;
+}
+
+function rank(ids: string[], prefs: RegExp[]): string[] {
+  const skip = /whisper|orpheus|guard|safeguard|tts|embed|rerank|reward/i;
+  const out: string[] = [];
+  for (const re of prefs) for (const id of ids) if (re.test(id) && !skip.test(id) && !out.includes(id)) out.push(id);
+  return out;
+}
+
+type OA = { role: string; content: unknown };
+
+async function chat(kind: "groq" | "nvidia", model: string, messages: OA[], maxTokens: number, timeoutMs: number): Promise<string> {
+  const url = kind === "groq" ? "https://api.groq.com/openai/v1/chat/completions" : "https://integrate.api.nvidia.com/v1/chat/completions";
+  const key = kind === "groq" ? GROQ_KEY : NVIDIA_KEY;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: maxTokens }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!r.ok) throw new Error(`${kind} ${model} ${r.status} ${(await r.text()).slice(0, 160)}`);
+  const j = await r.json();
+  const text = String(j.choices?.[0]?.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  if (!text) throw new Error(`${kind} ${model} empty`);
+  return text;
+}
+
+async function viaProvider(kind: "groq" | "nvidia", prefs: RegExp[], messages: OA[], maxTokens: number, timeoutMs: number, first?: string): Promise<string> {
+  if ((kind === "groq" ? GROQ_KEY : NVIDIA_KEY) === "") throw new Error(`${kind} key missing`);
+  const ids = rank(await listModels(kind), prefs);
+  if (first) ids.unshift(first);
+  if (!ids.length) throw new Error(`${kind} no matching model`);
+  let last: unknown = new Error(`${kind} failed`);
+  for (const id of ids.slice(0, 3)) {
+    try {
+      return await chat(kind, id, messages, maxTokens, timeoutMs);
+    } catch (e) {
+      last = e;
+      console.error(String(e));
+    }
+  }
+  throw last;
+}
+
+async function viaGemini(parts: unknown[], system: string | null, history: { role: string; parts: unknown[] }[], maxTokens: number, extra: Record<string, unknown> = {}): Promise<string> {
+  if (!GEMINI_KEY) throw new Error("gemini key missing");
+  let last = "no model";
+  for (const model of GEMINI_MODELS) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(30000),
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: system }] },
-        contents,
-        generationConfig: { temperature: 0.5, maxOutputTokens: budget },
+        ...(system ? { system_instruction: { parts: [{ text: system }] } } : {}),
+        contents: [...history, { role: "user", parts }],
+        generationConfig: { temperature: 0.4, maxOutputTokens: maxTokens, ...extra },
       }),
-    });
+    }).catch((e) => ({ ok: false, status: 0, text: async () => String(e), json: async () => ({}) }) as unknown as Response);
     if (!r.ok) {
-      lastError = `${model} ${r.status} ${(await r.text()).slice(0, 200)}`;
+      last = `gemini ${model} ${r.status} ${(await r.text()).slice(0, 120)}`;
+      console.error(last);
       continue;
     }
     const j = await r.json();
-    const text = (j.candidates?.[0]?.content?.parts ?? [])
-      .map((p: { text?: string }) => p.text ?? "")
-      .join("")
-      .trim();
+    const text = (j.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("").trim();
     if (text) return text;
-    lastError = `${model} empty`;
+    last = `gemini ${model} empty`;
   }
-  throw new Error(lastError);
+  throw new Error(last);
 }
 
-async function nvidia(system: string, history: Turn[], message: string, budget: number): Promise<string> {
-  const messages = [
+const TEXT_PREFS = [/llama-3\.3-70b/, /gpt-oss-120b/, /qwen3/, /llama-3\.1-8b/];
+const BIG_PREFS = [/gpt-oss-120b/, /llama-3\.3-70b/, /qwen3/];
+const VISION_PREFS = [/llama-4/, /vision/, /qwen3/, /muse/];
+const NV_PREFS = [/nemotron-3.*ultra/i, /nemotron.*ultra/i, /nemotron-3.*super/i, /nemotron.*(super|70b)/i];
+
+function oa(system: string, history: Turn[], message: string, image?: string): OA[] {
+  const msgs: OA[] = [
     { role: "system", content: system },
     ...history.map((h) => ({ role: h.role === "tutor" ? "assistant" : "user", content: String(h.text).slice(0, 1500) })),
-    { role: "user", content: message },
   ];
-  const r = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${NVIDIA_KEY}` },
-    body: JSON.stringify({ model: NVIDIA_MODEL, messages, temperature: 0.5, top_p: 0.9, max_tokens: budget }),
-    signal: AbortSignal.timeout(70000),
+  msgs.push({
+    role: "user",
+    content: image
+      ? [{ type: "text", text: message }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image}` } }]
+      : message,
   });
-  if (!r.ok) throw new Error(`nvidia ${NVIDIA_MODEL} ${r.status} ${(await r.text()).slice(0, 200)}`);
-  const j = await r.json();
-  const raw = String(j.choices?.[0]?.message?.content ?? "");
-  const text = raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
-  if (!text) throw new Error("nvidia empty");
-  return text;
+  return msgs;
+}
+
+async function answer(pro: boolean, system: string, history: Turn[], message: string, image?: string): Promise<string> {
+  const msgs = oa(system, history, message, image);
+  const gHistory = history.map((h) => ({ role: h.role === "tutor" ? "model" : "user", parts: [{ text: String(h.text).slice(0, 1500) }] }));
+  const gParts: unknown[] = [{ text: message }];
+  if (image) gParts.push({ inline_data: { mime_type: "image/jpeg", data: image } });
+  const gem = () => viaGemini(gParts, system, gHistory, pro ? 2500 : 1200);
+
+  let steps: Array<() => Promise<string>>;
+  if (pro && !image) {
+    steps = [
+      () => viaProvider("nvidia", NV_PREFS, msgs, 1800, 60000, NVIDIA_MODEL || undefined),
+      () => viaProvider("groq", BIG_PREFS, msgs, 2500, 30000),
+      gem,
+    ];
+  } else if (pro) {
+    steps = [gem, () => viaProvider("groq", VISION_PREFS, msgs, 1500, 30000)];
+  } else if (image) {
+    steps = [() => viaProvider("groq", VISION_PREFS, msgs, 1200, 30000), gem];
+  } else {
+    steps = [() => viaProvider("groq", TEXT_PREFS, msgs, 1200, 25000), gem];
+  }
+  const errors: string[] = [];
+  for (const step of steps) {
+    try {
+      return await step();
+    } catch (e) {
+      errors.push(String(e).slice(0, 200));
+    }
+  }
+  throw new Error(errors.join(" | "));
 }
 
 function reply(body: unknown, status = 200) {
@@ -152,15 +232,7 @@ Deno.serve(async (req) => {
     const context = studying.length ? `\nThe student is currently studying: ${studying.join("; ")}.` : "";
     const prompt = PROMPTS[key] + context;
     const ask = message || "Please check my attempt.";
-    let text = "";
-    if (pro && NVIDIA_KEY && !image) {
-      try {
-        text = await nvidia(prompt, history, ask, 1800);
-      } catch (e) {
-        console.error(String(e));
-      }
-    }
-    if (!text) text = await gemini(pro ? PRO_MODELS : MODELS, pro ? 3000 : 1500, prompt, history, ask, image);
+    const text = await answer(pro, prompt, history, ask, image);
     return reply({ reply: text, mode, credits });
   } catch (e) {
     console.error(String(e));

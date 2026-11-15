@@ -185,6 +185,18 @@ fun SettingsScreen(
             }
         }
 
+        if (profile?.isAdmin == true) {
+            Spacer(Modifier.height(16.dp))
+            AreadCard(onClick = onAdminUnlocked) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Admin panel", style = MaterialTheme.typography.titleMedium)
+                        Text("Users, credit codes, pricing and usage", style = MaterialTheme.typography.bodyMedium, color = AreadColors.Muted)
+                    }
+                    Icon(Icons.Outlined.ChevronRight, null, tint = AreadColors.Muted)
+                }
+            }
+        }
         Spacer(Modifier.height(24.dp))
         SecondaryButton("Sign out", onClick = onSignOut)
         Spacer(Modifier.height(20.dp))
@@ -385,84 +397,6 @@ fun AppPickerScreen() {
                     })
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun AdminScreen() {
-    var stats by remember { mutableStateOf<Map<String, Int>?>(null) }
-    var users by remember { mutableStateOf<List<Profile>>(emptyList()) }
-    var err by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        runCatching {
-            stats = Repository.adminStats()
-            users = Repository.adminAllProfiles()
-        }.onFailure { err = "Not authorised." }
-    }
-    LazyColumn(Modifier.fillMaxSize().padding(20.dp)) {
-        item {
-            Spacer(Modifier.height(12.dp))
-            Text("Admin", style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(16.dp))
-        }
-        err?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-        stats?.let { s ->
-            item {
-                AreadCard {
-                    s.forEach { (k, v) ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            Text(k.replace('_', ' '), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                            Text("$v", style = MaterialTheme.typography.titleMedium)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-        }
-        item {
-            var count by remember { mutableStateOf("5") }
-            var credits by remember { mutableStateOf("20") }
-            var codes by remember { mutableStateOf<List<String>>(emptyList()) }
-            var codeErr by remember { mutableStateOf<String?>(null) }
-            val scope = rememberCoroutineScope()
-            val ctx = LocalContext.current
-            AreadCard {
-                Text("Pro credit codes", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Create codes to sell or give away. Each code can be used once.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = AreadColors.Muted,
-                )
-                Spacer(Modifier.height(10.dp))
-                DigitField(count, { count = it }, "How many codes", 3)
-                Spacer(Modifier.height(8.dp))
-                DigitField(credits, { credits = it }, "Credits per code", 4)
-                Spacer(Modifier.height(10.dp))
-                SecondaryButton("Create codes", enabled = (count.toIntOrNull() ?: 0) > 0 && (credits.toIntOrNull() ?: 0) > 0) {
-                    scope.launch {
-                        codeErr = null
-                        runCatching { Repository.adminCodes(count.toInt(), credits.toInt()) }
-                            .onSuccess { codes = it }
-                            .onFailure { codeErr = "Couldn't create codes." }
-                    }
-                }
-                codeErr?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (codes.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    codes.forEach { Text(it, style = MaterialTheme.typography.titleMedium) }
-                    TextButton(onClick = {
-                        val i = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, codes.joinToString("\n"))
-                        runCatching { ctx.startActivity(Intent.createChooser(i, "Share codes").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                    }) { Text("Share or copy") }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-        items(users) { u ->
-            Text("${u.name} · class ${u.classLevel} · ${u.schoolName}", style = MaterialTheme.typography.bodyMedium)
-            Text("streak ${u.streakDays}d · ${u.focusMinutesWeek} min/week", color = AreadColors.Muted, style = MaterialTheme.typography.bodyMedium)
-            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = AreadColors.Line)
         }
     }
 }

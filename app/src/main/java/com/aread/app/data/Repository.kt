@@ -15,6 +15,8 @@ import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.storage.storage
 import io.ktor.client.statement.bodyAsText
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 object Repository {
     private val sb get() = Supabase.client
@@ -123,11 +125,25 @@ object Repository {
     suspend fun adminCodes(count: Int, credits: Int): List<String> =
         sb.postgrest.rpc("admin_create_codes", mapOf("n" to count, "credits" to credits)).decodeList<String>()
 
-    suspend fun adminStats(): Map<String, Int> = sb.postgrest.rpc("admin_stats").decodeAs()
+    suspend fun adminOverview(): Map<String, Long> = sb.postgrest.rpc("admin_overview").decodeAs()
 
-    suspend fun adminAllProfiles(): List<Profile> =
-        sb.from("profiles").select {
-            order("created_at", Order.DESCENDING)
-            limit(200)
-        }.decodeList()
+    suspend fun adminUsers(search: String): List<AdminUser> =
+        sb.postgrest.rpc("admin_users", mapOf("p_search" to search)).decodeList()
+
+    suspend fun adminGrant(userId: String, amount: Int): Int =
+        sb.postgrest.rpc("admin_grant_credits", buildJsonObject { put("p_user", userId); put("p_amount", amount) }).decodeAs()
+
+    suspend fun adminSetAdmin(userId: String, flag: Boolean) {
+        sb.postgrest.rpc("admin_set_admin", buildJsonObject { put("p_user", userId); put("p_flag", flag) })
+    }
+
+    suspend fun adminCodeList(): List<AdminCode> = sb.postgrest.rpc("admin_codes_list").decodeList()
+
+    suspend fun adminDeleteCode(code: String) {
+        sb.postgrest.rpc("admin_delete_code", mapOf("p_code" to code))
+    }
+
+    suspend fun adminSetConfig(key: String, value: String) {
+        sb.postgrest.rpc("admin_set_config", mapOf("p_key" to key, "p_value" to value))
+    }
 }

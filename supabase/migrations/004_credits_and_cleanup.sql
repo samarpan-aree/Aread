@@ -33,17 +33,17 @@ declare
   r public.redeem_codes;
   refu uuid;
   bal int;
-  code text := upper(trim(p_code));
+  norm text := upper(trim(p_code));
 begin
   if uid is null then raise exception 'not signed in'; end if;
   insert into public.pro_credits(user_id) values (uid) on conflict do nothing;
-  update public.redeem_codes set used_by = uid, used_at = now()
-    where redeem_codes.code = redeem_code.code and used_by is null returning * into r;
+  update public.redeem_codes rc set used_by = uid, used_at = now()
+    where rc.code = norm and rc.used_by is null returning * into r;
   if found then
     update public.pro_credits set balance = balance + r.credits, updated_at = now() where user_id = uid returning balance into bal;
     return bal;
   end if;
-  select user_id into refu from public.pro_credits where upper(ref_code) = code and user_id <> uid;
+  select user_id into refu from public.pro_credits where upper(ref_code) = norm and user_id <> uid;
   if refu is not null then
     if exists (select 1 from public.pro_credits where user_id = uid and referred_by is not null) then
       raise exception 'already_referred';
